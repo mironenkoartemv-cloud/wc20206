@@ -125,15 +125,13 @@
                 <div class="stage-head">
                   <div>
                     <h2>Live-таблица</h2>
-                    <span id="liveSource">Источник результатов ожидает подключения</span>
                   </div>
-                  <span class="live-pill">live</span>
+                  <button class="ghost-button" id="refreshLive" type="button">Обновить</button>
                 </div>
                 <div class="live-panel">
                   <div class="live-head">
                     <div>
                       <strong>Текущие очки игроков</strong>
-                      <span>Таблица обновится после подключения фактических результатов</span>
                     </div>
                   </div>
                   <div class="live-table" id="liveLeaderboard"></div>
@@ -226,7 +224,7 @@
             </article>
             <article class="faq-card">
               <h3>Как работает live-таблица?</h3>
-              <p>После сохранения прогноз появляется в live-таблице. Страница читает фактические группы и матчи из открытого API World Cup 2026, сохраняет их локально и пересчитывает очки игроков. Если источник временно недоступен, таблица остается на последнем сохраненном состоянии.</p>
+              <p>После сохранения прогноз появляется в live-таблице. Нажми «Обновить», чтобы подтянуть актуальные данные с сервера и пересчитать очки игроков.</p>
             </article>
             <article class="faq-card prize">
               <h3>Что получает победитель?</h3>

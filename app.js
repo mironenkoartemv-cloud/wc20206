@@ -189,7 +189,7 @@ const nodes = {
   summaryTitle: document.querySelector("#summaryTitle"),
   summaryText: document.querySelector("#summaryText"),
   liveLeaderboard: document.querySelector("#liveLeaderboard"),
-  liveSource: document.querySelector("#liveSource"),
+  refreshLive: document.querySelector("#refreshLive"),
   toThirds: document.querySelector("#toThirds"),
   backToGroups: document.querySelector("#backToGroups"),
   toBracket: document.querySelector("#toBracket"),
@@ -222,6 +222,7 @@ function boot() {
   nodes.savePrediction?.addEventListener("click", savePrediction);
   nodes.editBracket?.addEventListener("click", () => setStage("bracket"));
   nodes.goToLive?.addEventListener("click", () => setStage("live"));
+  nodes.refreshLive?.addEventListener("click", handleLiveRefresh);
   nodes.openLeaderboard?.addEventListener("click", openLeaderboard);
   nodes.closeLeaderboard?.addEventListener("click", () => nodes.leaderboardModal.close());
   nodes.exportData?.addEventListener("click", exportData);
@@ -977,10 +978,11 @@ function getActualResults() {
   }
 }
 
-async function refreshActualResultsFromSource() {
-  if (nodes.liveSource) nodes.liveSource.textContent = "Обновляем live-таблицу...";
-
+async function refreshActualResultsFromSource({ refreshProvider = false } = {}) {
   try {
+    if (refreshProvider) {
+      await apiRequest("/api/results/refresh", { method: "POST" });
+    }
     await syncBackendData();
     renderStatus();
     renderConfirmation();
@@ -991,26 +993,27 @@ async function refreshActualResultsFromSource() {
     backendMode = false;
   }
 
-  const cached = getActualResults();
-  if (nodes.liveSource) {
-    nodes.liveSource.textContent = cached
-      ? `Источник: ${cached.source}; последнее обновление ${formatDate(cached.updatedAt)}`
-      : "Источник результатов ожидает подключения на сервере";
-  }
   renderLiveLeaderboard();
   renderSavedPrediction();
+}
+
+async function handleLiveRefresh() {
+  if (!nodes.refreshLive || nodes.refreshLive.disabled) return;
+  nodes.refreshLive.disabled = true;
+  nodes.refreshLive.textContent = "Обновляем";
+
+  try {
+    await refreshActualResultsFromSource({ refreshProvider: true });
+  } finally {
+    nodes.refreshLive.disabled = false;
+    nodes.refreshLive.textContent = "Обновить";
+  }
 }
 
 function renderLiveLeaderboard() {
   if (!nodes.liveLeaderboard) return;
 
   if (backendMode && serverLeaderboard) {
-    if (nodes.liveSource) {
-      nodes.liveSource.textContent = serverLeaderboard.source
-        ? `Источник: ${serverLeaderboard.source}; обновлено ${serverLeaderboard.updatedAt ? formatDate(serverLeaderboard.updatedAt) : "ожидается"}`
-        : "Источник результатов ожидает подключения";
-    }
-
     nodes.liveLeaderboard.innerHTML = "";
     if (!serverLeaderboard.rows.length) {
       const empty = document.createElement("div");
@@ -1041,12 +1044,6 @@ function renderLiveLeaderboard() {
       score: calculateLiveScore(record, actual),
     }))
     .sort((a, b) => b.score - a.score || new Date(a.savedAt) - new Date(b.savedAt));
-
-  if (nodes.liveSource) {
-    nodes.liveSource.textContent = actual?.source
-      ? `Источник: ${actual.source}; обновлено ${formatDate(actual.updatedAt)}`
-      : "Источник результатов ожидает подключения";
-  }
 
   nodes.liveLeaderboard.innerHTML = "";
   if (!predictions.length) {

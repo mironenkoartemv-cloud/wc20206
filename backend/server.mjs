@@ -168,6 +168,27 @@ async function routeApi(request, response, url) {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/results/refresh") {
+    const db = await loadDb();
+    try {
+      db.actualResults = await refreshActualResults();
+      await saveDb(db);
+      sendJson(response, 200, {
+        actualResults: sanitizeActualResults(db.actualResults),
+        leaderboard: buildLeaderboard(db),
+      });
+    } catch (error) {
+      console.warn("Results refresh failed", error);
+      sendJson(response, 502, {
+        error: "results_source_unavailable",
+        message: "Не удалось обновить результаты турнира.",
+        actualResults: sanitizeActualResults(db.actualResults),
+        leaderboard: buildLeaderboard(db),
+      });
+    }
+    return;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/admin/reset") {
     if (!isAdmin(request)) {
       sendJson(response, 401, { error: "unauthorized", message: "Нужен admin token." });

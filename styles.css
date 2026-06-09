@@ -89,6 +89,7 @@ button {
 .hero {
   position: relative;
   overflow: hidden;
+  overflow: clip;
   border: 1px solid rgba(255, 255, 255, 0.12);
   background: linear-gradient(108deg, rgba(138, 29, 255, 0.74) 1%, rgba(58, 15, 97, 0.78) 89%);
   border-radius: 8px;
@@ -106,16 +107,16 @@ main {
 .hero-symbol-bg {
   position: absolute;
   z-index: 0;
-  top: 5%;
-  left: 31%;
-  width: min(900px, 72vw);
+  top: 2%;
+  right: clamp(8px, 4vw, 62px);
+  width: min(760px, 52vw);
   height: auto;
-  opacity: 0.19;
+  opacity: 0.13;
   filter: saturate(1.2);
   pointer-events: none;
-  transform: rotate(-7deg);
+  transform: rotate(-6deg);
   transform-origin: center;
-  mask-image: radial-gradient(circle at 48% 48%, black 0, rgba(0, 0, 0, 0.74) 46%, transparent 80%);
+  mask-image: radial-gradient(circle at 50% 48%, black 0, rgba(0, 0, 0, 0.66) 48%, transparent 78%);
 }
 
 .topbar {
@@ -137,6 +138,13 @@ main {
   display: block;
   width: clamp(150px, 18vw, 240px);
   height: auto;
+}
+
+.brand-fallback {
+  color: var(--white);
+  font-family: var(--font-heading);
+  font-size: 17px;
+  font-weight: 800;
 }
 
 .input-row {
@@ -189,7 +197,7 @@ main {
 
 .hero-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(260px, 380px);
+  grid-template-columns: minmax(0, 1fr) minmax(220px, 340px);
   gap: 28px;
   padding: 34px 36px 48px;
 }
@@ -285,20 +293,22 @@ h3 {
   z-index: 2;
   display: grid;
   align-content: end;
+  min-width: 0;
   min-height: 260px;
-  padding: 0 8px 16px 0;
+  padding: 0 0 16px;
 }
 
 .hero-prize p {
-  width: min(360px, 100%);
+  width: min(320px, 100%);
   margin: 0 0 0 auto;
   font-family: var(--font-tagline);
   color: var(--white);
-  font-size: clamp(34px, 4.4vw, 62px);
-  line-height: 1.02;
+  font-size: clamp(24px, 3.2vw, 44px);
+  line-height: 1.08;
   text-align: right;
   text-transform: uppercase;
   text-shadow: 0 14px 42px rgba(7, 2, 17, 0.72);
+  overflow-wrap: anywhere;
 }
 
 main {
@@ -1334,9 +1344,11 @@ main {
   }
 
   .hero-symbol-bg {
-    left: 22%;
-    width: 760px;
-    opacity: 0.16;
+    top: 8%;
+    right: -42px;
+    left: auto;
+    width: min(660px, 78vw);
+    opacity: 0.12;
   }
 
   .hero-prize {
@@ -1366,10 +1378,11 @@ main {
   }
 
   .hero-symbol-bg {
-    top: 14%;
-    left: 18%;
-    width: 620px;
-    opacity: 0.12;
+    top: 4%;
+    right: -210px;
+    left: auto;
+    width: 560px;
+    opacity: 0.1;
     mask-image: radial-gradient(circle at 48% 48%, black 0, rgba(0, 0, 0, 0.72) 42%, transparent 78%);
   }
 
@@ -1398,17 +1411,26 @@ main {
   }
 
   .stage-head {
-    align-items: stretch;
+    align-items: flex-start;
     flex-direction: column;
   }
 
   .stage-actions {
-    justify-content: stretch;
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .stage-actions button,
   .stage-head > .primary-button {
-    flex: 1 1 140px;
+    flex: 0 0 auto;
+  }
+
+  .stage-actions button {
+    flex: 1 1 132px;
+  }
+
+  .stage-head > .primary-button {
+    align-self: stretch;
   }
 
   .confirm-champion,

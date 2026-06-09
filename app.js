@@ -2,7 +2,6 @@ const STORAGE_DRAFT = "wc2026-predictor-draft";
 const STORAGE_PREDICTIONS = "wc2026-predictor-predictions";
 const STORAGE_ACTUAL_RESULTS = "wc2026-actual-results";
 const STORAGE_PLAYER_TOKEN = "wc2026-player-token";
-const WORLD_CUP_API_BASE = "https://worldcup26.ir";
 const LIVE_REFRESH_INTERVAL_MS = 1000 * 60 * 5;
 const API_BASE =
   typeof window !== "undefined" && ["3000", "5173", "5174"].includes(window.location?.port)
@@ -134,57 +133,6 @@ const GROUPS = [
 ];
 
 const TEAM_BY_ID = Object.fromEntries(GROUPS.flatMap((group) => group.teams).map((item) => [item.id, item]));
-
-const API_TEAM_ID_TO_LOCAL_ID = {
-  1: "mexico",
-  2: "south-africa",
-  3: "south-korea",
-  4: "czechia",
-  5: "canada",
-  6: "bosnia",
-  7: "qatar",
-  8: "switzerland",
-  9: "brazil",
-  10: "morocco",
-  11: "haiti",
-  12: "scotland",
-  13: "usa",
-  14: "paraguay",
-  15: "australia",
-  16: "turkey",
-  17: "germany",
-  18: "curacao",
-  19: "cote-divoire",
-  20: "ecuador",
-  21: "netherlands",
-  22: "japan",
-  23: "sweden",
-  24: "tunisia",
-  25: "belgium",
-  26: "egypt",
-  27: "iran",
-  28: "new-zealand",
-  29: "spain",
-  30: "cabo-verde",
-  31: "saudi-arabia",
-  32: "uruguay",
-  33: "france",
-  34: "senegal",
-  35: "iraq",
-  36: "norway",
-  37: "argentina",
-  38: "algeria",
-  39: "austria",
-  40: "jordan",
-  41: "portugal",
-  42: "dr-congo",
-  43: "uzbekistan",
-  44: "colombia",
-  45: "england",
-  46: "croatia",
-  47: "ghana",
-  48: "panama",
-};
 
 const ROUND32_DEFS = [
   matchDef(73, "2A", "2B"),
@@ -1043,134 +991,14 @@ async function refreshActualResultsFromSource() {
     backendMode = false;
   }
 
-  if (nodes.liveSource) nodes.liveSource.textContent = "Обновляем данные World Cup 2026 API...";
-
-  try {
-    const [groupsPayload, gamesPayload] = await Promise.all([
-      requestJson(`${WORLD_CUP_API_BASE}/get/groups`),
-      requestJson(`${WORLD_CUP_API_BASE}/get/games`),
-    ]);
-    const actual = normalizeWorldCupApiResults(groupsPayload, gamesPayload);
-    writeStorage(STORAGE_ACTUAL_RESULTS, JSON.stringify(actual));
-    renderLiveLeaderboard();
-  } catch (error) {
-    const cached = getActualResults();
-    if (nodes.liveSource) {
-      nodes.liveSource.textContent = cached
-        ? `Источник: ${cached.source}; последнее обновление ${formatDate(cached.updatedAt)}`
-        : "Источник World Cup 2026 API временно недоступен";
-    }
+  const cached = getActualResults();
+  if (nodes.liveSource) {
+    nodes.liveSource.textContent = cached
+      ? `Источник: ${cached.source}; последнее обновление ${formatDate(cached.updatedAt)}`
+      : "Источник результатов ожидает подключения на сервере";
   }
-}
-
-async function requestJson(url) {
-  if (typeof fetch === "function") {
-    const response = await fetch(url);
-    if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.json();
-  }
-
-  return new Promise((resolve, reject) => {
-    const request = new XMLHttpRequest();
-    request.open("GET", url, true);
-    request.responseType = "json";
-    request.onload = () => {
-      if (request.status < 200 || request.status >= 300) {
-        reject(new Error(`HTTP ${request.status}`));
-        return;
-      }
-      resolve(request.response || JSON.parse(request.responseText));
-    };
-    request.onerror = () => reject(new Error("Network error"));
-    request.send();
-  });
-}
-
-function normalizeWorldCupApiResults(groupsPayload, gamesPayload) {
-  const groups = normalizeApiGroups(groupsPayload.groups || []);
-  const thirdGroups = normalizeApiThirdGroups(groupsPayload.groups || []);
-  const picks = normalizeApiKnockoutPicks(gamesPayload.games || []);
-
-  return {
-    source: "worldcup26.ir",
-    updatedAt: new Date().toISOString(),
-    groups,
-    thirdGroups,
-    picks,
-  };
-}
-
-function normalizeApiGroups(apiGroups) {
-  return Object.fromEntries(
-    apiGroups
-      .filter((group) => /^[A-L]$/.test(group.name) && isApiGroupComplete(group))
-      .map((group) => [
-        group.name,
-        [...group.teams]
-          .sort(compareApiTableRows)
-          .map((row) => API_TEAM_ID_TO_LOCAL_ID[Number(row.team_id)])
-          .filter(Boolean),
-      ]),
-  );
-}
-
-function normalizeApiThirdGroups(apiGroups) {
-  const completedGroups = apiGroups.filter((group) => /^[A-L]$/.test(group.name) && isApiGroupComplete(group));
-  if (completedGroups.length < 12) return [];
-
-  return completedGroups
-    .map((group) => {
-      const sortedTeams = [...group.teams].sort(compareApiTableRows);
-      return { groupId: group.name, row: sortedTeams[2] };
-    })
-    .filter((item) => item.row)
-    .sort((a, b) => compareApiTableRows(a.row, b.row))
-    .slice(0, 8)
-    .map((item) => item.groupId);
-}
-
-function normalizeApiKnockoutPicks(apiGames) {
-  return Object.fromEntries(
-    apiGames
-      .filter((game) => Number(game.id) >= 73 && isApiGameFinished(game))
-      .map((game) => [apiMatchIdToPickId(Number(game.id)), getApiGameWinnerLocalId(game)])
-      .filter(([, winnerId]) => Boolean(winnerId)),
-  );
-}
-
-function compareApiTableRows(a, b) {
-  return (
-    Number(b.pts) - Number(a.pts) ||
-    Number(b.gd) - Number(a.gd) ||
-    Number(b.gf) - Number(a.gf) ||
-    Number(a.ga) - Number(b.ga) ||
-    Number(a.team_id) - Number(b.team_id)
-  );
-}
-
-function isApiGroupComplete(group) {
-  return group.teams.every((row) => Number(row.mp) >= 3);
-}
-
-function isApiGameFinished(game) {
-  return String(game.finished).toLowerCase() === "true";
-}
-
-function getApiGameWinnerLocalId(game) {
-  const homeScore = Number(game.home_score);
-  const awayScore = Number(game.away_score);
-  if (!Number.isFinite(homeScore) || !Number.isFinite(awayScore) || homeScore === awayScore) return null;
-  const winnerApiId = homeScore > awayScore ? game.home_team_id : game.away_team_id;
-  return API_TEAM_ID_TO_LOCAL_ID[Number(winnerApiId)] || null;
-}
-
-function apiMatchIdToPickId(matchNumber) {
-  if (matchNumber >= 73 && matchNumber <= 88) return `m${matchNumber}`;
-  if (matchNumber >= 89 && matchNumber <= 96) return `r16-${matchNumber}`;
-  if (matchNumber >= 97 && matchNumber <= 100) return `qf-${matchNumber}`;
-  if (matchNumber >= 101 && matchNumber <= 102) return `sf-${matchNumber}`;
-  if (matchNumber === 103 || matchNumber === 104) return `m${matchNumber}`;
-  return `m${matchNumber}`;
+  renderLiveLeaderboard();
+  renderSavedPrediction();
 }
 
 function renderLiveLeaderboard() {

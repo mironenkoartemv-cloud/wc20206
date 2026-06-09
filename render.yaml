@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: chexx-wc2026-predictor
+    runtime: node
+    plan: free
+    buildCommand: npm install
+    startCommand: npm start
+    envVars:
+      - key: NODE_VERSION
+        value: 24
+      - key: WORLD_CUP_API_BASE
+        value: https://worldcup26.ir
+      - key: ADMIN_TOKEN
+        sync: false

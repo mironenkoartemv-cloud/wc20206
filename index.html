@@ -1,0 +1,242 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Chexx · Плей-офф ЧМ-2026</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%23070211'/%3E%3Cpath d='M18 12h28v12c0 9-6 16-14 16s-14-7-14-16V12Z' fill='%238A1DFF'/%3E%3Cpath d='M24 44h16v8H24z' fill='%23FF045C'/%3E%3Cpath d='M21 52h22v5H21z' fill='%236AE545'/%3E%3C/svg%3E" />
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="hero">
+        <img class="hero-symbol-bg" src="./assets/gift.svg" alt="" aria-hidden="true" />
+        <nav class="topbar" aria-label="Основная навигация">
+          <div class="brand-mark" aria-label="Chexx">
+            <img class="chexx-logo" src="./assets/chexx-bet-logotype.svg" alt="Chexx Bet" />
+          </div>
+        </nav>
+
+        <section class="hero-grid">
+          <div class="hero-copy">
+            <h1>Собери свой путь к финалу ЧМ-2026</h1>
+            <p>
+              Расставь группы, выбери восемь третьих мест и проведи сборные через плей-офф.
+            </p>
+            <form class="player-form" id="playerForm">
+              <label for="playerName">Имя игрока</label>
+              <div class="input-row">
+                <input id="playerName" name="playerName" type="text" maxlength="32" autocomplete="name" placeholder="Например, Антон" />
+                <button class="primary-button" type="submit">Начать</button>
+              </div>
+            </form>
+          </div>
+          <div class="hero-prize">
+            <p>Выигрывай эксклюзивный мерч CHEXX</p>
+          </div>
+        </section>
+      </header>
+
+      <main>
+        <div class="prediction-flow" id="predictionFlow" hidden>
+          <section class="flow-shell" aria-label="Заполнение прогноза">
+            <div class="flow-header">
+              <div class="player-chip">
+                <span>Игрок</span>
+                <strong id="currentPlayer">не выбран</strong>
+              </div>
+              <ol class="flow-steps" aria-label="Этапы прогноза">
+                <li data-step-indicator="groups">Группы</li>
+                <li data-step-indicator="thirds">Третьи места</li>
+                <li data-step-indicator="bracket">Плей-офф</li>
+                <li data-step-indicator="confirm">Сохранение</li>
+                <li data-step-indicator="live">Live</li>
+              </ol>
+            </div>
+
+            <div class="flow-stage-window">
+              <section class="flow-stage" data-flow-stage="groups" aria-label="Групповой этап">
+                <div class="stage-head">
+                  <div>
+                    <h2>Групповой этап</h2>
+                    <span id="groupsProgress">0/12 изменено</span>
+                  </div>
+                  <button class="primary-button" id="toThirds" type="button">Далее</button>
+                </div>
+                <section class="groups-grid" id="groupsGrid" aria-label="Группы ЧМ-2026"></section>
+              </section>
+
+              <section class="flow-stage" data-flow-stage="thirds" aria-label="Лучшие третьи места">
+                <div class="stage-head">
+                  <div>
+                    <h2>Лучшие третьи места</h2>
+                    <span id="thirdCounter">0/8 выбрано</span>
+                  </div>
+                  <div class="stage-actions">
+                    <button class="ghost-button" id="backToGroups" type="button">Назад</button>
+                    <button class="primary-button" id="toBracket" type="button">Далее</button>
+                  </div>
+                </div>
+                <section class="third-place-panel">
+                  <div class="third-list" id="thirdList"></div>
+                </section>
+              </section>
+
+              <section class="flow-stage" data-flow-stage="bracket" aria-label="Плей-офф">
+                <div class="stage-head">
+                  <div>
+                    <h2>Плей-офф</h2>
+                    <span id="championProgress">чемпион не выбран</span>
+                  </div>
+                  <div class="stage-actions">
+                    <button class="ghost-button" id="backToThirds" type="button">Назад</button>
+                    <button class="primary-button" id="savePrediction" type="button">Сохранить</button>
+                  </div>
+                </div>
+                <section class="bracket-wrap">
+                  <div class="bracket" id="bracket"></div>
+                </section>
+                <section class="summary-panel">
+                  <div>
+                    <h2 id="summaryTitle">Прогноз пока не завершен</h2>
+                    <p id="summaryText">Выбери победителей всех матчей плей-офф.</p>
+                  </div>
+                </section>
+              </section>
+
+              <section class="flow-stage" data-flow-stage="confirm" aria-label="Подтверждение прогноза">
+                <div class="confirmation-panel">
+                  <div class="confirm-champion">
+                    <img src="./assets/cup.svg" alt="" aria-hidden="true" />
+                    <div>
+                      <span>Ваш чемпион</span>
+                      <strong id="confirmChampionTeam">—</strong>
+                    </div>
+                  </div>
+                  <div class="stage-actions">
+                    <button class="ghost-button" id="editBracket" type="button">Вернуться к сетке</button>
+                    <button class="primary-button" id="goToLive" type="button">Открыть live-таблицу</button>
+                  </div>
+                </div>
+              </section>
+
+              <section class="flow-stage" data-flow-stage="live" aria-label="Live-таблица">
+                <div class="stage-head">
+                  <div>
+                    <h2>Live-таблица</h2>
+                    <span id="liveSource">Источник результатов ожидает подключения</span>
+                  </div>
+                  <span class="live-pill">live</span>
+                </div>
+                <div class="live-panel">
+                  <div class="live-head">
+                    <div>
+                      <strong>Текущие очки игроков</strong>
+                      <span>Таблица обновится после подключения фактических результатов</span>
+                    </div>
+                  </div>
+                  <div class="live-table" id="liveLeaderboard"></div>
+                </div>
+                <section class="saved-selection" id="savedSelection" hidden>
+                  <div class="saved-selection-head">
+                    <div>
+                      <h3>Ваш сохраненный выбор</h3>
+                      <span id="savedPredictionMeta">—</span>
+                    </div>
+                  </div>
+                  <div class="saved-selection-grid">
+                    <article class="saved-block">
+                      <h4>Группы</h4>
+                      <div class="saved-groups" id="savedGroups"></div>
+                    </article>
+                    <article class="saved-block">
+                      <h4>Третьи места</h4>
+                      <div class="saved-thirds" id="savedThirds"></div>
+                    </article>
+                    <article class="saved-block saved-block-wide">
+                      <h4>Сетка турнира</h4>
+                      <div class="saved-bracket" id="savedBracket"></div>
+                    </article>
+                  </div>
+                </section>
+              </section>
+            </div>
+          </section>
+        </div>
+
+        <footer class="site-footer">
+        <section class="scoring-section" aria-label="Правила начисления очков">
+          <div class="section-heading">
+            <div>
+              <h2>Правила начисления очков</h2>
+            </div>
+          </div>
+          <div class="scoring-panel">
+            <div class="scoring-grid">
+              <article class="scoring-card">
+                <h3>Групповой этап</h3>
+                <ul>
+                  <li><strong>+3</strong> если ты угадал всю группу полностью: все 4 команды стоят на правильных местах.</li>
+                  <li><strong>+2</strong> если ты угадал ровно 2 места в группе.</li>
+                  <li><strong>+1</strong> если ты угадал ровно 1 место в группе.</li>
+                  <li><strong>0</strong> если в группе нет ни одного точного места.</li>
+                </ul>
+              </article>
+              <article class="scoring-card">
+                <h3>Лучшие третьи места</h3>
+                <ul>
+                  <li><strong>+2</strong> за каждую команду, которую ты выбрал среди 8 лучших третьих мест и которая реально туда попала.</li>
+                  <li><strong>0</strong> если выбранная команда заняла третье место, но не прошла дальше, или если ты ее не выбрал.</li>
+                </ul>
+              </article>
+              <article class="scoring-card">
+                <h3>Плей-офф</h3>
+                <ul>
+                  <li><strong>+1</strong> за победителя матча 1/16 финала.</li>
+                  <li><strong>+2</strong> за победителя матча 1/8 финала.</li>
+                  <li><strong>+3</strong> за победителя матча 1/4 финала.</li>
+                  <li><strong>+4</strong> за победителя полуфинала.</li>
+                  <li><strong>+5</strong> за победителя матча за 3-е место.</li>
+                  <li><strong>+10</strong> за победителя финала.</li>
+                </ul>
+              </article>
+            </div>
+          </div>
+        </section>
+
+        <section class="faq-section" aria-label="FAQ">
+          <div class="section-heading">
+            <div>
+              <h2>FAQ</h2>
+            </div>
+          </div>
+          <div class="faq-grid">
+            <article class="faq-card">
+              <h3>Как выбрать места в группе?</h3>
+              <p>В каждой группе расставь четыре сборные с 1-го по 4-е место. Можно перетаскивать строки мышкой или пользоваться стрелками справа. Первые две позиции считаются прямым выходом в плей-офф. Команда на третьей позиции попадет в список кандидатов на лучшие третьи места.</p>
+            </article>
+            <article class="faq-card">
+              <h3>Как выбрать победителей?</h3>
+              <p>После групп выбери 8 команд из списка третьих мест и нажми «Далее». В каждом матче плей-офф нажимай на сборную, которая, по твоему прогнозу, пройдет дальше. Победитель автоматически попадет в следующий раунд, поэтому сетка постепенно соберется до финала.</p>
+            </article>
+            <article class="faq-card">
+              <h3>Как начисляются очки?</h3>
+              <p>Подробная система баллов описана в отдельном блоке выше. Там есть все значения по группам, третьим местам и каждому раунду плей-офф.</p>
+            </article>
+            <article class="faq-card">
+              <h3>Как работает live-таблица?</h3>
+              <p>После сохранения прогноз появляется в live-таблице. Страница читает фактические группы и матчи из открытого API World Cup 2026, сохраняет их локально и пересчитывает очки игроков. Если источник временно недоступен, таблица остается на последнем сохраненном состоянии.</p>
+            </article>
+            <article class="faq-card prize">
+              <h3>Что получает победитель?</h3>
+              <p>Игрок с самым высоким итоговым счетом получает фирменный мерч Chexx.</p>
+            </article>
+          </div>
+        </section>
+        </footer>
+      </main>
+    </div>
+
+    <script src="./app.js"></script>
+  </body>
+</html>

@@ -312,6 +312,7 @@ async function apiRequest(path, options = {}) {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     const error = new Error(payload.message || `HTTP ${response.status}`);
+    error.status = response.status;
     error.payload = payload;
     throw error;
   }
@@ -375,6 +376,7 @@ async function handlePlayerSubmit(event) {
   try {
     const response = await registerPlayer(name);
     backendMode = true;
+    nodes.playerName.setCustomValidity("");
     state.player = {
       id: response.player.id,
       name: response.player.displayName,
@@ -382,11 +384,15 @@ async function handlePlayerSubmit(event) {
     };
     if (response.accessToken) writeStorage(STORAGE_PLAYER_TOKEN, response.accessToken);
     currentSavedPrediction = response.prediction || null;
-  } catch {
-    state.player = state.player || {};
-    state.player.id = state.player.id || crypto.randomUUID();
-    state.player.name = name;
-    state.player.createdAt = state.player.createdAt || new Date().toISOString();
+  } catch (error) {
+    if (error.status === 409 || error.payload?.error === "player_exists") {
+      nodes.playerName.setCustomValidity(error.payload?.message || "Такой игрок уже зарегистрирован.");
+      nodes.playerName.reportValidity();
+      return;
+    }
+    nodes.playerName.setCustomValidity(error.payload?.message || "Не удалось зарегистрировать игрока. Попробуй еще раз.");
+    nodes.playerName.reportValidity();
+    return;
   }
 
   state.stage = "groups";
@@ -947,18 +953,20 @@ async function savePrediction() {
     renderStatus();
     return;
   } catch (error) {
-    console.warn("Backend save failed, falling back to local storage.", error);
+    if (error.status === 409 || error.payload?.error === "prediction_locked") {
+      backendMode = true;
+      currentSavedPrediction = error.payload?.prediction || currentSavedPrediction;
+      state.stage = "confirm";
+      persistDraft();
+      renderConfirmation(currentSavedPrediction);
+      renderSavedPrediction(currentSavedPrediction);
+      renderStatus();
+      return;
+    }
+    console.warn("Backend save failed.", error);
+    if (nodes.summaryTitle) nodes.summaryTitle.textContent = "Не удалось сохранить прогноз";
+    if (nodes.summaryText) nodes.summaryText.textContent = error.payload?.message || "Проверь подключение к серверу и попробуй еще раз.";
   }
-
-  const predictions = getPredictions();
-  const withoutCurrent = predictions.filter((item) => item.id !== record.id);
-  writeStorage(STORAGE_PREDICTIONS, JSON.stringify([record, ...withoutCurrent]));
-  state.stage = "confirm";
-  persistDraft();
-  renderConfirmation(record);
-  renderLiveLeaderboard();
-  renderSavedPrediction(record);
-  renderStatus();
 }
 
 function getPredictions() {

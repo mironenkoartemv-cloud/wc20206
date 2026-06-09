@@ -60,9 +60,18 @@ async function routeApi(request, response, url) {
   if (request.method === "POST" && url.pathname === "/api/players") {
     const body = await readJsonBody(request);
     const db = await loadDb();
-    const displayName = String(body.displayName || "").trim().slice(0, 32);
+    const displayName = normalizeDisplayName(body.displayName).slice(0, 32).trim();
     if (!displayName) {
       sendJson(response, 400, { error: "validation_error", message: "Имя игрока обязательно." });
+      return;
+    }
+    const displayNameKey = normalizeDisplayNameKey(displayName);
+    const existingPlayer = db.players.find((player) => normalizeDisplayNameKey(player.displayName) === displayNameKey);
+    if (existingPlayer) {
+      sendJson(response, 409, {
+        error: "player_exists",
+        message: "Игрок с таким именем уже зарегистрирован. Используй другое имя.",
+      });
       return;
     }
 
@@ -70,6 +79,7 @@ async function routeApi(request, response, url) {
     const player = {
       id: crypto.randomUUID(),
       displayName,
+      displayNameKey,
       accessTokenHash: hashToken(token),
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -93,7 +103,7 @@ async function routeApi(request, response, url) {
     sendJson(response, 200, {
       player: publicPlayer(context.player),
       prediction: prediction ? toFrontendPrediction(prediction, context.player) : null,
-      canEditPrediction: true,
+      canEditPrediction: !prediction,
     });
     return;
   }
@@ -111,6 +121,15 @@ async function routeApi(request, response, url) {
   if (request.method === "PUT" && url.pathname === "/api/predictions/me") {
     const context = await requirePlayer(request, response);
     if (!context) return;
+    const existingPrediction = context.db.predictions.find((item) => item.playerId === context.player.id);
+    if (existingPrediction) {
+      sendJson(response, 409, {
+        error: "prediction_locked",
+        message: "Прогноз уже сохранен. Повторное сохранение недоступно.",
+        prediction: toFrontendPrediction(existingPrediction, context.player),
+      });
+      return;
+    }
     const body = await readJsonBody(request);
     const validation = validatePrediction(body);
     if (!validation.ok) {
@@ -140,14 +159,7 @@ async function routeApi(request, response, url) {
       updatedAt: now,
     };
 
-    const index = context.db.predictions.findIndex((item) => item.playerId === context.player.id);
-    if (index >= 0) {
-      record.id = context.db.predictions[index].id;
-      record.createdAt = context.db.predictions[index].createdAt;
-      context.db.predictions[index] = record;
-    } else {
-      context.db.predictions.push(record);
-    }
+    context.db.predictions.push(record);
     await saveDb(context.db);
 
     sendJson(response, 200, {
@@ -329,6 +341,14 @@ function publicPlayer(player) {
     displayName: player.displayName,
     createdAt: player.createdAt,
   };
+}
+
+function normalizeDisplayName(value) {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function normalizeDisplayNameKey(value) {
+  return normalizeDisplayName(value).toLocaleLowerCase("ru-RU");
 }
 
 function sanitizeActualResults(actualResults) {

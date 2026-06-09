@@ -66,11 +66,21 @@ const beta = await createPlayer("Beta");
 const perfectPrediction = createPrediction("home");
 const altPrediction = createPrediction("away");
 
+await test("duplicate player name is rejected", async () => {
+  const response = await request("/api/players", {
+    method: "POST",
+    body: { displayName: " alpha " },
+    expectedStatus: 409,
+  });
+  assert.equal(response.body.error, "player_exists");
+});
+
 await test("created player can be fetched by token", async () => {
   const response = await request("/api/me", { token: alpha.accessToken });
   assert.equal(response.status, 200);
   assert.equal(response.body.player.displayName, "Alpha");
   assert.equal(response.body.prediction, null);
+  assert.equal(response.body.canEditPrediction, true);
 });
 
 await test("prediction save requires token", async () => {
@@ -162,17 +172,25 @@ await test("valid prediction is saved", async () => {
   assert.equal(response.body.prediction.championId, perfectPrediction.championTeamId);
 });
 
-await test("same player overwrites prediction instead of duplicating", async () => {
+await test("saved prediction locks the player from editing", async () => {
+  const response = await request("/api/me", { token: alpha.accessToken });
+  assert.equal(response.body.canEditPrediction, false);
+  assert.equal(response.body.prediction.championId, perfectPrediction.championTeamId);
+});
+
+await test("same player cannot save prediction twice", async () => {
   const firstSave = await request("/api/predictions/me", {
-    method: "PUT",
-    token: beta.accessToken,
-    body: perfectPrediction,
-  });
-  const secondSave = await request("/api/predictions/me", {
     method: "PUT",
     token: beta.accessToken,
     body: altPrediction,
   });
+  const secondSave = await request("/api/predictions/me", {
+    method: "PUT",
+    token: beta.accessToken,
+    body: perfectPrediction,
+    expectedStatus: 409,
+  });
+  assert.equal(secondSave.body.error, "prediction_locked");
   assert.equal(firstSave.body.prediction.predictionId, secondSave.body.prediction.predictionId);
   const leaderboard = await request("/api/leaderboard");
   assert.equal(leaderboard.body.rows.filter((row) => row.playerId === beta.player.id).length, 1);

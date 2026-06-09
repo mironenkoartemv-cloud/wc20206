@@ -57,6 +57,24 @@ async function routeApi(request, response, url) {
     return;
   }
 
+  if (request.method === "GET" && url.pathname === "/api/players/availability") {
+    const db = await loadDb();
+    const displayName = normalizeDisplayName(url.searchParams.get("displayName")).slice(0, 32).trim();
+    if (!displayName) {
+      sendJson(response, 200, { available: false, reason: "empty" });
+      return;
+    }
+    const pruned = prunePlayersWithoutPredictions(db);
+    if (pruned) await saveDb(db);
+    const player = findPlayerByDisplayName(db, displayName);
+    const prediction = player ? findPredictionByPlayerId(db, player.id) : null;
+    sendJson(response, 200, {
+      available: !prediction,
+      reason: prediction ? "prediction_exists" : null,
+    });
+    return;
+  }
+
   if (request.method === "POST" && url.pathname === "/api/players") {
     const body = await readJsonBody(request);
     const db = await loadDb();
@@ -66,8 +84,9 @@ async function routeApi(request, response, url) {
       return;
     }
     const displayNameKey = normalizeDisplayNameKey(displayName);
-    const existingPlayer = db.players.find((player) => normalizeDisplayNameKey(player.displayName) === displayNameKey);
-    if (existingPlayer) {
+    prunePlayersWithoutPredictions(db, displayName);
+    const existingPlayer = findPlayerByDisplayName(db, displayName);
+    if (existingPlayer && findPredictionByPlayerId(db, existingPlayer.id)) {
       sendJson(response, 409, {
         error: "player_exists",
         message: "Игрок с таким именем уже зарегистрирован. Используй другое имя.",
@@ -96,10 +115,81 @@ async function routeApi(request, response, url) {
     return;
   }
 
+  if (request.method === "POST" && url.pathname === "/api/predictions") {
+    const body = await readJsonBody(request);
+    const db = await loadDb();
+    const displayName = normalizeDisplayName(body.displayName).slice(0, 32).trim();
+    if (!displayName) {
+      sendJson(response, 400, { error: "validation_error", message: "Имя игрока обязательно." });
+      return;
+    }
+
+    prunePlayersWithoutPredictions(db);
+    const existingPlayer = findPlayerByDisplayName(db, displayName);
+    const existingPrediction = existingPlayer ? findPredictionByPlayerId(db, existingPlayer.id) : null;
+    if (existingPrediction) {
+      sendJson(response, 409, {
+        error: "player_exists",
+        message: "Игрок с таким именем уже сохранил прогноз.",
+        prediction: toFrontendPrediction(existingPrediction, existingPlayer),
+      });
+      return;
+    }
+
+    const validation = validatePrediction(body);
+    if (!validation.ok) {
+      sendJson(response, 400, {
+        error: "validation_error",
+        message: "Прогноз не прошел серверную проверку.",
+        details: validation.errors,
+      });
+      return;
+    }
+
+    const token = createToken();
+    const player = {
+      id: crypto.randomUUID(),
+      displayName,
+      displayNameKey: normalizeDisplayNameKey(displayName),
+      accessTokenHash: hashToken(token),
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+    const normalized = normalizePredictionPayload(body);
+    const champion = getChampionFromPrediction(normalized);
+    const now = new Date().toISOString();
+    const prediction = {
+      id: crypto.randomUUID(),
+      playerId: player.id,
+      tournamentCode: "wc2026",
+      status: "submitted",
+      groups: normalized.groups,
+      thirdGroups: normalized.thirdGroups,
+      thirdPlaces: normalized.thirdPlaces,
+      picks: normalized.picks,
+      championId: champion.id,
+      submittedAt: now,
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    db.players.push(player);
+    db.predictions.push(prediction);
+    await saveDb(db);
+
+    sendJson(response, 201, {
+      player: publicPlayer(player),
+      accessToken: token,
+      prediction: toFrontendPrediction(prediction, player),
+      canEditPrediction: false,
+    });
+    return;
+  }
+
   if (request.method === "GET" && url.pathname === "/api/me") {
     const context = await requirePlayer(request, response);
     if (!context) return;
-    const prediction = context.db.predictions.find((item) => item.playerId === context.player.id) || null;
+    const prediction = findPredictionByPlayerId(context.db, context.player.id) || null;
     sendJson(response, 200, {
       player: publicPlayer(context.player),
       prediction: prediction ? toFrontendPrediction(prediction, context.player) : null,
@@ -111,7 +201,7 @@ async function routeApi(request, response, url) {
   if (request.method === "GET" && url.pathname === "/api/predictions/me") {
     const context = await requirePlayer(request, response);
     if (!context) return;
-    const prediction = context.db.predictions.find((item) => item.playerId === context.player.id) || null;
+    const prediction = findPredictionByPlayerId(context.db, context.player.id) || null;
     sendJson(response, 200, {
       prediction: prediction ? toFrontendPrediction(prediction, context.player) : null,
     });
@@ -121,7 +211,7 @@ async function routeApi(request, response, url) {
   if (request.method === "PUT" && url.pathname === "/api/predictions/me") {
     const context = await requirePlayer(request, response);
     if (!context) return;
-    const existingPrediction = context.db.predictions.find((item) => item.playerId === context.player.id);
+    const existingPrediction = findPredictionByPlayerId(context.db, context.player.id);
     if (existingPrediction) {
       sendJson(response, 409, {
         error: "prediction_locked",
@@ -349,6 +439,27 @@ function normalizeDisplayName(value) {
 
 function normalizeDisplayNameKey(value) {
   return normalizeDisplayName(value).toLocaleLowerCase("ru-RU");
+}
+
+function findPlayerByDisplayName(db, displayName) {
+  const key = normalizeDisplayNameKey(displayName);
+  return db.players.find((player) => normalizeDisplayNameKey(player.displayName) === key) || null;
+}
+
+function findPredictionByPlayerId(db, playerId) {
+  return db.predictions.find((item) => item.playerId === playerId) || null;
+}
+
+function prunePlayersWithoutPredictions(db, displayName = "") {
+  const playerIdsWithPredictions = new Set(db.predictions.map((prediction) => prediction.playerId));
+  const displayNameKey = displayName ? normalizeDisplayNameKey(displayName) : "";
+  const before = db.players.length;
+  db.players = db.players.filter((player) => {
+    if (playerIdsWithPredictions.has(player.id)) return true;
+    if (!displayNameKey) return false;
+    return normalizeDisplayNameKey(player.displayName) !== displayNameKey;
+  });
+  return db.players.length !== before;
 }
 
 function sanitizeActualResults(actualResults) {

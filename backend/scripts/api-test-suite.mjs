@@ -61,26 +61,46 @@ await test("invalid JSON returns 400", async () => {
   assert.equal(response.body.error, "bad_request");
 });
 
-const alpha = await createPlayer("Alpha");
-const beta = await createPlayer("Beta");
+await test("unfinished player name is released", async () => {
+  await createPlayer("Temporary");
+  const availability = await request("/api/players/availability?displayName=temporary");
+  assert.equal(availability.body.available, true);
+  const reused = await createPlayer(" temporary ");
+  assert.equal(reused.player.displayName, "temporary");
+});
+
 const perfectPrediction = createPrediction("home");
 const altPrediction = createPrediction("away");
 
-await test("duplicate player name is rejected", async () => {
-  const response = await request("/api/players", {
-    method: "POST",
-    body: { displayName: " alpha " },
-    expectedStatus: 409,
-  });
-  assert.equal(response.body.error, "player_exists");
+await test("available player name returns true", async () => {
+  const response = await request("/api/players/availability?displayName=Alpha");
+  assert.equal(response.body.available, true);
 });
 
-await test("created player can be fetched by token", async () => {
+await test("atomic prediction submit creates player and locks name", async () => {
+  const gamma = await submitPrediction("Gamma", altPrediction);
+  assert.equal(gamma.player.displayName, "Gamma");
+  assert.ok(gamma.accessToken);
+  const duplicate = await request("/api/predictions", {
+    method: "POST",
+    body: {
+      displayName: " gamma ",
+      ...altPrediction,
+    },
+    expectedStatus: 409,
+  });
+  assert.equal(duplicate.body.error, "player_exists");
+});
+
+const alpha = await submitPrediction("Alpha", perfectPrediction);
+const beta = await submitPrediction("Beta", altPrediction);
+
+await test("saved player can be fetched by token", async () => {
   const response = await request("/api/me", { token: alpha.accessToken });
   assert.equal(response.status, 200);
   assert.equal(response.body.player.displayName, "Alpha");
-  assert.equal(response.body.prediction, null);
-  assert.equal(response.body.canEditPrediction, true);
+  assert.equal(response.body.prediction.championId, perfectPrediction.championTeamId);
+  assert.equal(response.body.canEditPrediction, false);
 });
 
 await test("prediction save requires token", async () => {
@@ -95,10 +115,9 @@ await test("prediction save requires token", async () => {
 await test("prediction with repeated group team is rejected", async () => {
   const invalid = clone(perfectPrediction);
   invalid.groups.A[1] = invalid.groups.A[0];
-  const response = await request("/api/predictions/me", {
-    method: "PUT",
-    token: alpha.accessToken,
-    body: invalid,
+  const response = await request("/api/predictions", {
+    method: "POST",
+    body: { displayName: "Invalid Repeat", ...invalid },
     expectedStatus: 400,
   });
   assert.equal(response.body.error, "validation_error");
@@ -108,10 +127,9 @@ await test("prediction with repeated group team is rejected", async () => {
 await test("prediction with wrong team in group is rejected", async () => {
   const invalid = clone(perfectPrediction);
   invalid.groups.A[0] = "brazil";
-  const response = await request("/api/predictions/me", {
-    method: "PUT",
-    token: alpha.accessToken,
-    body: invalid,
+  const response = await request("/api/predictions", {
+    method: "POST",
+    body: { displayName: "Invalid Group", ...invalid },
     expectedStatus: 400,
   });
   assert.equal(response.body.error, "validation_error");
@@ -122,10 +140,9 @@ await test("prediction with 7 third places is rejected", async () => {
   const invalid = clone(perfectPrediction);
   invalid.thirdGroups = invalid.thirdGroups.slice(0, 7);
   invalid.thirdPlaces = invalid.thirdPlaces.slice(0, 7);
-  const response = await request("/api/predictions/me", {
-    method: "PUT",
-    token: alpha.accessToken,
-    body: invalid,
+  const response = await request("/api/predictions", {
+    method: "POST",
+    body: { displayName: "Invalid Thirds", ...invalid },
     expectedStatus: 400,
   });
   assert.equal(response.body.error, "validation_error");
@@ -138,10 +155,9 @@ await test("prediction with mismatched thirdPlaces teamId is rejected", async ()
     ...invalid.thirdPlaces[0],
     teamId: invalid.groups[invalid.thirdPlaces[0].groupId][3],
   };
-  const response = await request("/api/predictions/me", {
-    method: "PUT",
-    token: alpha.accessToken,
-    body: invalid,
+  const response = await request("/api/predictions", {
+    method: "POST",
+    body: { displayName: "Invalid Third Team", ...invalid },
     expectedStatus: 400,
   });
   assert.equal(response.body.error, "validation_error");
@@ -151,25 +167,24 @@ await test("prediction with mismatched thirdPlaces teamId is rejected", async ()
 await test("prediction with mismatched champion is rejected", async () => {
   const invalid = clone(perfectPrediction);
   invalid.championTeamId = "brazil";
-  const response = await request("/api/predictions/me", {
-    method: "PUT",
-    token: alpha.accessToken,
-    body: invalid,
+  const response = await request("/api/predictions", {
+    method: "POST",
+    body: { displayName: "Invalid Champion", ...invalid },
     expectedStatus: 400,
   });
   assert.equal(response.body.error, "validation_error");
   assert.ok(response.body.details.some((line) => line.includes("championId")));
 });
 
-await test("valid prediction is saved", async () => {
-  const response = await request("/api/predictions/me", {
-    method: "PUT",
-    token: alpha.accessToken,
-    body: perfectPrediction,
+await test("saved player name is unavailable", async () => {
+  const availability = await request("/api/players/availability?displayName=alpha");
+  assert.equal(availability.body.available, false);
+  const duplicatePlayer = await request("/api/players", {
+    method: "POST",
+    body: { displayName: " alpha " },
+    expectedStatus: 409,
   });
-  assert.equal(response.status, 200);
-  assert.equal(response.body.prediction.name, "Alpha");
-  assert.equal(response.body.prediction.championId, perfectPrediction.championTeamId);
+  assert.equal(duplicatePlayer.body.error, "player_exists");
 });
 
 await test("saved prediction locks the player from editing", async () => {
@@ -179,11 +194,6 @@ await test("saved prediction locks the player from editing", async () => {
 });
 
 await test("same player cannot save prediction twice", async () => {
-  const firstSave = await request("/api/predictions/me", {
-    method: "PUT",
-    token: beta.accessToken,
-    body: altPrediction,
-  });
   const secondSave = await request("/api/predictions/me", {
     method: "PUT",
     token: beta.accessToken,
@@ -191,7 +201,7 @@ await test("same player cannot save prediction twice", async () => {
     expectedStatus: 409,
   });
   assert.equal(secondSave.body.error, "prediction_locked");
-  assert.equal(firstSave.body.prediction.predictionId, secondSave.body.prediction.predictionId);
+  assert.equal(beta.prediction.predictionId, secondSave.body.prediction.predictionId);
   const leaderboard = await request("/api/leaderboard");
   assert.equal(leaderboard.body.rows.filter((row) => row.playerId === beta.player.id).length, 1);
 });
@@ -260,8 +270,17 @@ async function createPlayer(displayName) {
     expectedStatus: 201,
   });
   assert.equal(response.status, 201);
-  assert.equal(response.body.player.displayName, displayName);
+  assert.equal(response.body.player.displayName, displayName.replace(/\s+/g, " ").trim());
   assert.ok(response.body.accessToken);
+  return response.body;
+}
+
+async function submitPrediction(displayName, prediction) {
+  const response = await request("/api/predictions", {
+    method: "POST",
+    body: { displayName, ...prediction },
+    expectedStatus: 201,
+  });
   return response.body;
 }
 

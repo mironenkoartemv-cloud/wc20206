@@ -3,6 +3,7 @@ const STORAGE_PREDICTIONS = "wc2026-predictor-predictions";
 const STORAGE_ACTUAL_RESULTS = "wc2026-actual-results";
 const STORAGE_PLAYER_TOKEN = "wc2026-player-token";
 const LIVE_REFRESH_INTERVAL_MS = 1000 * 60 * 5;
+const NAME_CHECK_DEBOUNCE_MS = 300;
 const API_BASE =
   typeof window !== "undefined" && ["3000", "5173", "5174"].includes(window.location?.port)
     ? "http://localhost:8787"
@@ -173,10 +174,13 @@ let backendMode = false;
 let serverLeaderboard = null;
 let serverActualResults = null;
 let currentSavedPrediction = null;
+let nameCheckTimer = null;
+let nameCheckVersion = 0;
 
 const nodes = {
   playerForm: document.querySelector("#playerForm"),
   playerName: document.querySelector("#playerName"),
+  playerStart: document.querySelector("#playerStart"),
   predictionFlow: document.querySelector("#predictionFlow"),
   currentPlayer: document.querySelector("#currentPlayer"),
   groupsProgress: document.querySelector("#groupsProgress"),
@@ -215,6 +219,7 @@ boot();
 function boot() {
   nodes.playerName.value = state.player?.name || "";
   nodes.playerForm.addEventListener("submit", handlePlayerSubmit);
+  nodes.playerName.addEventListener("input", handlePlayerNameInput);
   nodes.toThirds?.addEventListener("click", () => setStage("thirds"));
   nodes.backToGroups?.addEventListener("click", () => setStage("groups"));
   nodes.toBracket?.addEventListener("click", handleBuildBracket);
@@ -229,6 +234,7 @@ function boot() {
   nodes.resetPrediction?.addEventListener("click", resetPrediction);
 
   render();
+  handlePlayerNameInput();
   refreshActualResultsFromSource();
   liveRefreshTimer = window.setInterval(refreshActualResultsFromSource, LIVE_REFRESH_INTERVAL_MS);
 }
@@ -319,17 +325,15 @@ async function apiRequest(path, options = {}) {
   return payload;
 }
 
-function registerPlayer(displayName) {
-  return apiRequest("/api/players", {
-    method: "POST",
-    body: JSON.stringify({ displayName }),
-  });
+function checkPlayerNameAvailability(displayName) {
+  return apiRequest(`/api/players/availability?displayName=${encodeURIComponent(displayName)}`);
 }
 
 function savePredictionToBackend(record) {
-  return apiRequest("/api/predictions/me", {
-    method: "PUT",
+  return apiRequest("/api/predictions", {
+    method: "POST",
     body: JSON.stringify({
+      displayName: record.name,
       groups: record.groups,
       thirdGroups: record.thirdGroups,
       thirdPlaces: record.thirdGroups.map((groupId) => ({
@@ -340,6 +344,66 @@ function savePredictionToBackend(record) {
       championTeamId: record.championId,
     }),
   });
+}
+
+function setStartButtonState({ disabled, message = "" }) {
+  if (nodes.playerStart) nodes.playerStart.disabled = disabled;
+  if (nodes.playerName) nodes.playerName.setCustomValidity(message);
+}
+
+function handlePlayerNameInput() {
+  const name = nodes.playerName.value.trim();
+  window.clearTimeout(nameCheckTimer);
+  if (!name) {
+    setStartButtonState({ disabled: true, message: "" });
+    return;
+  }
+
+  const version = ++nameCheckVersion;
+  setStartButtonState({ disabled: true, message: "" });
+  nameCheckTimer = window.setTimeout(async () => {
+    try {
+      const response = await checkPlayerNameAvailability(name);
+      if (version !== nameCheckVersion) return;
+      if (response.available) {
+        setStartButtonState({ disabled: false, message: "" });
+        return;
+      }
+      setStartButtonState({
+        disabled: true,
+        message: "Игрок с таким именем уже сохранил прогноз.",
+      });
+    } catch {
+      if (version !== nameCheckVersion) return;
+      setStartButtonState({
+        disabled: true,
+        message: "Не удалось проверить имя. Попробуй еще раз.",
+      });
+    }
+  }, NAME_CHECK_DEBOUNCE_MS);
+}
+
+async function ensurePlayerNameAvailable(displayName) {
+  try {
+    const response = await checkPlayerNameAvailability(displayName);
+    if (response.available) {
+      setStartButtonState({ disabled: false, message: "" });
+      return true;
+    }
+    setStartButtonState({
+      disabled: true,
+      message: "Игрок с таким именем уже сохранил прогноз.",
+    });
+    nodes.playerName.reportValidity();
+    return false;
+  } catch {
+    setStartButtonState({
+      disabled: true,
+      message: "Не удалось проверить имя. Попробуй еще раз.",
+    });
+    nodes.playerName.reportValidity();
+    return false;
+  }
 }
 
 async function syncBackendData() {
@@ -373,27 +437,15 @@ async function handlePlayerSubmit(event) {
     return;
   }
 
-  try {
-    const response = await registerPlayer(name);
-    backendMode = true;
-    nodes.playerName.setCustomValidity("");
-    state.player = {
-      id: response.player.id,
-      name: response.player.displayName,
-      createdAt: response.player.createdAt || new Date().toISOString(),
-    };
-    if (response.accessToken) writeStorage(STORAGE_PLAYER_TOKEN, response.accessToken);
-    currentSavedPrediction = response.prediction || null;
-  } catch (error) {
-    if (error.status === 409 || error.payload?.error === "player_exists") {
-      nodes.playerName.setCustomValidity(error.payload?.message || "Такой игрок уже зарегистрирован.");
-      nodes.playerName.reportValidity();
-      return;
-    }
-    nodes.playerName.setCustomValidity(error.payload?.message || "Не удалось зарегистрировать игрока. Попробуй еще раз.");
-    nodes.playerName.reportValidity();
-    return;
-  }
+  if (!(await ensurePlayerNameAvailable(name))) return;
+
+  backendMode = true;
+  currentSavedPrediction = null;
+  state.player = {
+    id: `draft-${Date.now()}`,
+    name,
+    createdAt: new Date().toISOString(),
+  };
 
   state.stage = "groups";
   flowStarted = true;
@@ -944,6 +996,14 @@ async function savePrediction() {
   try {
     const response = await savePredictionToBackend(record);
     backendMode = true;
+    if (response.accessToken) writeStorage(STORAGE_PLAYER_TOKEN, response.accessToken);
+    if (response.player) {
+      state.player = {
+        id: response.player.id,
+        name: response.player.displayName,
+        createdAt: response.player.createdAt || state.player.createdAt,
+      };
+    }
     currentSavedPrediction = response.prediction;
     state.stage = "confirm";
     persistDraft();
@@ -953,7 +1013,7 @@ async function savePrediction() {
     renderStatus();
     return;
   } catch (error) {
-    if (error.status === 409 || error.payload?.error === "prediction_locked") {
+    if (error.status === 409 || error.payload?.error === "prediction_locked" || error.payload?.error === "player_exists") {
       backendMode = true;
       currentSavedPrediction = error.payload?.prediction || currentSavedPrediction;
       state.stage = "confirm";

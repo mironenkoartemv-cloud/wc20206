@@ -557,8 +557,17 @@ main {
   height: 100%;
   place-items: center;
   background: transparent;
-  font-size: 30px;
+  font-size: 18px;
   line-height: 1;
+}
+
+.flag-img {
+  display: block;
+  width: 34px;
+  height: 23px;
+  object-fit: cover;
+  border-radius: 2px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2);
 }
 
 .team-name {
@@ -794,8 +803,15 @@ main {
 
 .pick-row .flag {
   min-height: 29px;
-  font-size: 20px;
   background: transparent;
+}
+
+.pick-row .flag-img,
+.saved-team-row .flag-img,
+.saved-third .flag-img,
+.saved-pick .flag-img {
+  width: 26px;
+  height: 18px;
 }
 
 .pick-row span:last-child {

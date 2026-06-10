@@ -30,6 +30,57 @@ const SCORING = {
   champion: 10,
 };
 
+const FLAG_CODES = {
+  mexico: "mx",
+  "south-korea": "kr",
+  czechia: "cz",
+  "south-africa": "za",
+  canada: "ca",
+  switzerland: "ch",
+  qatar: "qa",
+  bosnia: "ba",
+  brazil: "br",
+  morocco: "ma",
+  scotland: "gb-sct",
+  haiti: "ht",
+  usa: "us",
+  turkey: "tr",
+  paraguay: "py",
+  australia: "au",
+  germany: "de",
+  ecuador: "ec",
+  "cote-divoire": "ci",
+  curacao: "cw",
+  netherlands: "nl",
+  japan: "jp",
+  sweden: "se",
+  tunisia: "tn",
+  belgium: "be",
+  iran: "ir",
+  egypt: "eg",
+  "new-zealand": "nz",
+  spain: "es",
+  uruguay: "uy",
+  "saudi-arabia": "sa",
+  "cabo-verde": "cv",
+  france: "fr",
+  senegal: "sn",
+  norway: "no",
+  iraq: "iq",
+  argentina: "ar",
+  austria: "at",
+  algeria: "dz",
+  jordan: "jo",
+  portugal: "pt",
+  colombia: "co",
+  uzbekistan: "uz",
+  "dr-congo": "cd",
+  england: "gb-eng",
+  croatia: "hr",
+  ghana: "gh",
+  panama: "pa",
+};
+
 const GROUPS = [
   {
     id: "A",
@@ -248,7 +299,12 @@ function boot() {
 }
 
 function team(id, name, flag) {
-  return { id, name, flag };
+  return { id, name, flag, flagCode: FLAG_CODES[id] };
+}
+
+function flagMarkup(item) {
+  if (!item?.flagCode) return item?.flag || "·";
+  return `<img class="flag-img" src="https://flagcdn.com/${item.flagCode}.svg" alt="" loading="lazy" decoding="async" />`;
 }
 
 function matchDef(id, home, away) {
@@ -565,7 +621,7 @@ function createTeamRow(groupId, teamId, index) {
   row.dataset.place = String(index + 1);
   row.innerHTML = `
     <span class="place-badge">${index + 1}</span>
-    <span class="flag">${item.flag}</span>
+    <span class="flag">${flagMarkup(item)}</span>
     <span class="team-name">${item.name}</span>
     <button class="move-button" type="button" aria-label="Поднять ${item.name}" ${index === 0 ? "disabled" : ""}>↑</button>
     <button class="move-button" type="button" aria-label="Опустить ${item.name}" ${index === 3 ? "disabled" : ""}>↓</button>
@@ -651,7 +707,7 @@ function renderThirdPlaces() {
     const selected = state.thirdGroups.includes(groupId);
     card.className = `third-card${selected ? " selected" : ""}`;
     card.innerHTML = `
-      <span class="flag">${item.flag}</span>
+      <span class="flag">${flagMarkup(item)}</span>
       <span class="third-meta">
         <strong>${item.name}</strong>
       </span>
@@ -911,7 +967,7 @@ function renderPickButton(match, item) {
   button.type = "button";
   button.disabled = !item;
   button.innerHTML = item
-    ? `<span class="flag">${item.flag}</span><span>${item.name}</span>`
+    ? `<span class="flag">${flagMarkup(item)}</span><span>${item.name}</span>`
     : `<span class="flag">·</span><span>ожидает победителя</span>`;
   if (item) {
     button.addEventListener("click", () => pickWinner(match.id, item.id));
@@ -1158,7 +1214,7 @@ function renderSavedGroups(record) {
       const row = document.createElement("div");
       row.className = "saved-team-row";
       row.innerHTML = item
-        ? `<span>${index + 1}</span><span class="flag">${item.flag}</span><span>${item.name}</span>`
+        ? `<span>${index + 1}</span><span class="flag">${flagMarkup(item)}</span><span>${item.name}</span>`
         : `<span>${index + 1}</span><span class="flag">·</span><span>не выбрано</span>`;
       card.appendChild(row);
     });
@@ -1176,7 +1232,7 @@ function renderSavedThirds(record) {
     const card = document.createElement("div");
     card.className = "saved-third";
     card.innerHTML = item
-      ? `<span class="flag">${item.flag}</span><strong>${item.name}</strong>`
+      ? `<span class="flag">${flagMarkup(item)}</span><strong>${item.name}</strong>`
       : `<span class="flag">·</span><strong>не выбрано</strong>`;
     nodes.savedThirds.appendChild(card);
   });
@@ -1219,7 +1275,7 @@ function renderSavedPick(item, winnerId) {
   const row = document.createElement("div");
   row.className = `saved-pick${item?.id === winnerId ? " selected" : ""}`;
   row.innerHTML = item
-    ? `<span class="flag">${item.flag}</span><span>${item.name}</span>`
+    ? `<span class="flag">${flagMarkup(item)}</span><span>${item.name}</span>`
     : `<span class="flag">·</span><span>ожидает победителя</span>`;
   return row;
 }

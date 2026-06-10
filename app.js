@@ -310,6 +310,18 @@ function writeStorage(key, value) {
   memoryStorage.set(key, value);
 }
 
+function removeStorage(key) {
+  try {
+    if (typeof localStorage !== "undefined") {
+      localStorage.removeItem(key);
+      return;
+    }
+  } catch {
+    // Fallback below keeps memory storage in sync when persistent storage is blocked.
+  }
+  memoryStorage.delete(key);
+}
+
 async function apiRequest(path, options = {}) {
   if (typeof fetch !== "function") throw new Error("Fetch is unavailable");
   const headers = {
@@ -447,6 +459,7 @@ async function handlePlayerSubmit(event) {
 
   if (!(await ensurePlayerNameAvailable(name))) return;
 
+  removeStorage(STORAGE_PLAYER_TOKEN);
   backendMode = true;
   currentSavedPrediction = null;
   state.player = {

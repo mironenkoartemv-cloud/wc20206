@@ -1,3 +1,10 @@
+import { allocateThirdSlotsFor } from "../../shared/third-place-matrix.mjs";
+import {
+  QUARTERFINAL_DEFS,
+  ROUND16_DEFS,
+  SEMIFINAL_DEFS,
+} from "../../shared/bracket-topology.mjs";
+
 export const SCORING = {
   fullGroup: 3,
   twoGroupPlaces: 2,
@@ -333,9 +340,9 @@ export function getBracketRoundsFromPrediction(record) {
       record.picks,
     ),
   );
-  const r16 = pairMatches("r16", 89, ROUND_NAMES.r16, r32, record.picks);
-  const qf = pairMatches("qf", 97, ROUND_NAMES.qf, r16, record.picks);
-  const sf = pairMatches("sf", 101, ROUND_NAMES.sf, qf, record.picks);
+  const r16 = createLinkedRound(ROUND16_DEFS, ROUND_NAMES.r16, r32, record.picks);
+  const qf = createLinkedRound(QUARTERFINAL_DEFS, ROUND_NAMES.qf, r16, record.picks);
+  const sf = createLinkedRound(SEMIFINAL_DEFS, ROUND_NAMES.sf, qf, record.picks);
   const final = [createMatch("m104", "M104", ROUND_NAMES.final, getWinner(sf[0]), getWinner(sf[1]), record.picks)];
   const bronze = [createMatch("m103", "M103", ROUND_NAMES.bronze, getLoser(sf[0]), getLoser(sf[1]), record.picks)];
 
@@ -346,38 +353,6 @@ export function getBracketRoundsFromPrediction(record) {
     { key: "sf", title: ROUND_NAMES.sf, matches: sf },
     { key: "final", title: ROUND_NAMES.final, matches: [...final, ...bronze] },
   ];
-}
-
-export function allocateThirdSlotsFor(thirdGroups) {
-  const slots = ROUND32_DEFS.flatMap((def) => [def.home, def.away])
-    .filter((slot) => slot.startsWith("3"))
-    .map((slot, index) => ({ key: `${slot}-${index}`, slot, candidates: slot.slice(1).split("/") }));
-
-  const selected = new Set(thirdGroups);
-  const ordered = [...slots].sort((a, b) => {
-    const aCount = a.candidates.filter((id) => selected.has(id)).length;
-    const bCount = b.candidates.filter((id) => selected.has(id)).length;
-    return aCount - bCount;
-  });
-
-  const assigned = new Map();
-  const used = new Set();
-
-  function backtrack(index) {
-    if (index === ordered.length) return true;
-    const slot = ordered[index];
-    const choices = slot.candidates.filter((groupId) => selected.has(groupId) && !used.has(groupId));
-    for (const groupId of choices) {
-      assigned.set(slot.slot, groupId);
-      used.add(groupId);
-      if (backtrack(index + 1)) return true;
-      assigned.delete(slot.slot);
-      used.delete(groupId);
-    }
-    return false;
-  }
-
-  return backtrack(0) ? Object.fromEntries(assigned) : null;
 }
 
 function resolveSlotForPrediction(slot, thirdAllocation, groups) {
@@ -402,22 +377,22 @@ function createMatch(id, code, title, home, away, picks) {
   };
 }
 
-function pairMatches(prefix, startId, title, previousRound, picks) {
-  const result = [];
-  for (let index = 0; index < previousRound.length; index += 2) {
-    const number = startId + index / 2;
-    result.push(
-      createMatch(
-        `${prefix}-${number}`,
-        `M${number}`,
-        title,
-        getWinner(previousRound[index]),
-        getWinner(previousRound[index + 1]),
-        picks,
-      ),
-    );
-  }
-  return result;
+function createLinkedRound(defs, title, previousRound, picks) {
+  const previousById = indexMatchesById(previousRound);
+  return defs.map((def) =>
+    createMatch(
+      def.id,
+      def.code,
+      title,
+      getWinner(previousById.get(def.homeSourceId)),
+      getWinner(previousById.get(def.awaySourceId)),
+      picks,
+    ),
+  );
+}
+
+function indexMatchesById(matches) {
+  return new Map(matches.map((match) => [match.id, match]));
 }
 
 export function getWinner(match) {

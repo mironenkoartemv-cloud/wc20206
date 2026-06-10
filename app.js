@@ -1,3 +1,11 @@
+import { allocateThirdSlotsFor } from "./shared/third-place-matrix.mjs";
+import {
+  BRACKET_LAYOUT,
+  QUARTERFINAL_DEFS,
+  ROUND16_DEFS,
+  SEMIFINAL_DEFS,
+} from "./shared/bracket-topology.mjs";
+
 const STORAGE_DRAFT = "wc2026-predictor-draft";
 const STORAGE_PREDICTIONS = "wc2026-predictor-predictions";
 const STORAGE_ACTUAL_RESULTS = "wc2026-actual-results";
@@ -687,38 +695,6 @@ function allocateThirdSlots() {
   return allocateThirdSlotsFor(state.thirdGroups);
 }
 
-function allocateThirdSlotsFor(thirdGroups) {
-  const slots = ROUND32_DEFS.flatMap((def) => [def.home, def.away])
-    .filter((slot) => slot.startsWith("3"))
-    .map((slot, index) => ({ key: `${slot}-${index}`, slot, candidates: slot.slice(1).split("/") }));
-
-  const selected = new Set(thirdGroups);
-  const ordered = [...slots].sort((a, b) => {
-    const aCount = a.candidates.filter((id) => selected.has(id)).length;
-    const bCount = b.candidates.filter((id) => selected.has(id)).length;
-    return aCount - bCount;
-  });
-
-  const assigned = new Map();
-  const used = new Set();
-
-  function backtrack(index) {
-    if (index === ordered.length) return true;
-    const slot = ordered[index];
-    const choices = slot.candidates.filter((groupId) => selected.has(groupId) && !used.has(groupId));
-    for (const groupId of choices) {
-      assigned.set(slot.slot, groupId);
-      used.add(groupId);
-      if (backtrack(index + 1)) return true;
-      assigned.delete(slot.slot);
-      used.delete(groupId);
-    }
-    return false;
-  }
-
-  return backtrack(0) ? Object.fromEntries(assigned) : null;
-}
-
 function getBracketRounds() {
   if (!state.bracketBuilt || state.thirdGroups.length !== 8) return [];
   const thirdAllocation = allocateThirdSlots();
@@ -727,9 +703,9 @@ function getBracketRounds() {
   const r32 = ROUND32_DEFS.map((def) =>
     createMatch(def.id, def.code, ROUND_NAMES.r32, resolveSlot(def.home, thirdAllocation), resolveSlot(def.away, thirdAllocation)),
   );
-  const r16 = pairMatches("r16", 89, ROUND_NAMES.r16, r32);
-  const qf = pairMatches("qf", 97, ROUND_NAMES.qf, r16);
-  const sf = pairMatches("sf", 101, ROUND_NAMES.sf, qf);
+  const r16 = createLinkedRound(ROUND16_DEFS, ROUND_NAMES.r16, r32);
+  const qf = createLinkedRound(QUARTERFINAL_DEFS, ROUND_NAMES.qf, r16);
+  const sf = createLinkedRound(SEMIFINAL_DEFS, ROUND_NAMES.sf, qf);
   const final = [createMatch("m104", "M104", ROUND_NAMES.final, getWinner(sf[0]), getWinner(sf[1]))];
   const bronze = [createMatch("m103", "M103", ROUND_NAMES.bronze, getLoser(sf[0]), getLoser(sf[1]))];
 
@@ -761,13 +737,21 @@ function resolveSlotForPrediction(slot, thirdAllocation, groups) {
   return getTeamByPositionFromGroups(slot, groups);
 }
 
-function pairMatches(prefix, startId, title, previousRound) {
-  const result = [];
-  for (let index = 0; index < previousRound.length; index += 2) {
-    const number = startId + index / 2;
-    result.push(createMatch(`${prefix}-${number}`, `M${number}`, title, getWinner(previousRound[index]), getWinner(previousRound[index + 1])));
-  }
-  return result;
+function createLinkedRound(defs, title, previousRound) {
+  const previousById = indexMatchesById(previousRound);
+  return defs.map((def) =>
+    createMatch(
+      def.id,
+      def.code,
+      title,
+      getWinner(previousById.get(def.homeSourceId)),
+      getWinner(previousById.get(def.awaySourceId)),
+    ),
+  );
+}
+
+function indexMatchesById(matches) {
+  return new Map(matches.map((match) => [match.id, match]));
 }
 
 function createMatch(id, code, title, home, away) {
@@ -807,9 +791,9 @@ function getBracketRoundsFromPrediction(record) {
       record.picks,
     ),
   );
-  const r16 = pairSavedMatches("r16", 89, ROUND_NAMES.r16, r32, record.picks);
-  const qf = pairSavedMatches("qf", 97, ROUND_NAMES.qf, r16, record.picks);
-  const sf = pairSavedMatches("sf", 101, ROUND_NAMES.sf, qf, record.picks);
+  const r16 = createSavedLinkedRound(ROUND16_DEFS, ROUND_NAMES.r16, r32, record.picks);
+  const qf = createSavedLinkedRound(QUARTERFINAL_DEFS, ROUND_NAMES.qf, r16, record.picks);
+  const sf = createSavedLinkedRound(SEMIFINAL_DEFS, ROUND_NAMES.sf, qf, record.picks);
   const final = [createSavedMatch("m104", "M104", ROUND_NAMES.final, getWinner(sf[0]), getWinner(sf[1]), record.picks)];
   const bronze = [createSavedMatch("m103", "M103", ROUND_NAMES.bronze, getLoser(sf[0]), getLoser(sf[1]), record.picks)];
 
@@ -822,22 +806,18 @@ function getBracketRoundsFromPrediction(record) {
   ];
 }
 
-function pairSavedMatches(prefix, startId, title, previousRound, picks) {
-  const result = [];
-  for (let index = 0; index < previousRound.length; index += 2) {
-    const number = startId + index / 2;
-    result.push(
-      createSavedMatch(
-        `${prefix}-${number}`,
-        `M${number}`,
-        title,
-        getWinner(previousRound[index]),
-        getWinner(previousRound[index + 1]),
-        picks,
-      ),
-    );
-  }
-  return result;
+function createSavedLinkedRound(defs, title, previousRound, picks) {
+  const previousById = indexMatchesById(previousRound);
+  return defs.map((def) =>
+    createSavedMatch(
+      def.id,
+      def.code,
+      title,
+      getWinner(previousById.get(def.homeSourceId)),
+      getWinner(previousById.get(def.awaySourceId)),
+      picks,
+    ),
+  );
 }
 
 function getWinner(match) {
@@ -880,18 +860,7 @@ function renderBracket() {
     return;
   }
 
-  const byKey = Object.fromEntries(rounds.map((round) => [round.key, round]));
-  const layout = [
-    { side: "left", title: ROUND_NAMES.r32, matches: byKey.r32.matches.slice(0, 8) },
-    { side: "left", title: ROUND_NAMES.r16, matches: byKey.r16.matches.slice(0, 4) },
-    { side: "left", title: ROUND_NAMES.qf, matches: byKey.qf.matches.slice(0, 2) },
-    { side: "left", title: ROUND_NAMES.sf, matches: byKey.sf.matches.slice(0, 1) },
-    { side: "center", title: ROUND_NAMES.final, matches: byKey.final.matches },
-    { side: "right", title: ROUND_NAMES.sf, matches: byKey.sf.matches.slice(1, 2) },
-    { side: "right", title: ROUND_NAMES.qf, matches: byKey.qf.matches.slice(2, 4) },
-    { side: "right", title: ROUND_NAMES.r16, matches: byKey.r16.matches.slice(4, 8) },
-    { side: "right", title: ROUND_NAMES.r32, matches: byKey.r32.matches.slice(8, 16) },
-  ];
+  const layout = buildBracketLayout(rounds);
 
   nodes.bracket.className = "bracket bracket-tree";
   layout.forEach((column) => {
@@ -901,6 +870,16 @@ function renderBracket() {
     column.matches.forEach((match) => element.appendChild(renderMatch(match)));
     nodes.bracket.appendChild(element);
   });
+}
+
+function buildBracketLayout(rounds) {
+  const byKey = Object.fromEntries(rounds.map((round) => [round.key, round]));
+  const byId = indexMatchesById(rounds.flatMap((round) => round.matches));
+  return BRACKET_LAYOUT.map((column) => ({
+    side: column.side,
+    title: byKey[column.key]?.title || "",
+    matches: column.matchIds.map((matchId) => byId.get(matchId)).filter(Boolean),
+  }));
 }
 
 function renderMatch(match) {
@@ -1205,9 +1184,9 @@ function renderSavedBracket(record) {
 
   const tree = document.createElement("div");
   tree.className = "saved-bracket-tree";
-  rounds.forEach((round) => {
+  buildBracketLayout(rounds).forEach((round) => {
     const column = document.createElement("div");
-    column.className = "saved-bracket-round";
+    column.className = `saved-bracket-round ${round.side}`;
     column.innerHTML = `<h5>${round.title}</h5>`;
     round.matches.forEach((match) => column.appendChild(renderSavedMatch(match)));
     tree.appendChild(column);

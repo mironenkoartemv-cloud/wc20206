@@ -1,16 +1,19 @@
-import fs from "node:fs/promises";
-import vm from "node:vm";
+import {
+  GROUPS,
+  SCORING,
+  TEAM_BY_ID,
+  calculateLiveScore,
+  getBracketRoundsFromPrediction,
+} from "../backend/src/tournament.mjs";
 
-const APP_FILE = new URL("../app.js", import.meta.url);
 const SEED = 20260609;
 const USER_COUNT = 10;
 
-const app = await loadAppApi();
 const rng = createRng(SEED);
 const actual = createActualTournament();
 const predictions = createPredictions(actual);
 const report = predictions.map((record) => {
-  const appScore = app.calculateLiveScore(record, actual);
+  const appScore = calculateLiveScore(record, actual);
   const expected = calculateExpectedScore(record, actual);
   return {
     player: record.name,
@@ -23,89 +26,6 @@ const report = predictions.map((record) => {
 });
 
 printReport(actual, report);
-
-async function loadAppApi() {
-  const source = await fs.readFile(APP_FILE, "utf8");
-  const sandbox = createSandbox();
-  const instrumented = source.replace(/\bboot\(\);\s*/, "") + `
-globalThis.__wc2026 = {
-  SCORING,
-  GROUPS,
-  TEAM_BY_ID,
-  createInitialGroups,
-  getBracketRoundsFromPrediction,
-  calculateLiveScore,
-  getMatchScore,
-};
-`;
-
-  vm.runInNewContext(instrumented, sandbox, { filename: "app.js" });
-  return sandbox.__wc2026;
-}
-
-function createSandbox() {
-  const storage = new Map();
-  return {
-    console,
-    crypto: { randomUUID: () => "simulation-id" },
-    alert: () => {},
-    confirm: () => true,
-    localStorage: {
-      getItem: (key) => storage.get(key) || null,
-      setItem: (key, value) => storage.set(key, String(value)),
-      removeItem: (key) => storage.delete(key),
-    },
-    window: {
-      setInterval: () => 0,
-      clearInterval: () => {},
-    },
-    XMLHttpRequest: class {},
-    document: createDocumentStub(),
-  };
-}
-
-function createDocumentStub() {
-  const createElement = () => {
-    const element = {
-      value: "",
-      hidden: false,
-      disabled: false,
-      className: "",
-      dataset: {},
-      children: [],
-      classList: {
-        add() {},
-        remove() {},
-        toggle() {},
-      },
-      addEventListener() {},
-      appendChild(child) {
-        this.children.push(child);
-        return child;
-      },
-      querySelector() {
-        return createElement();
-      },
-      querySelectorAll() {
-        return [];
-      },
-      set innerHTML(value) {
-        this._innerHTML = value;
-      },
-      get innerHTML() {
-        return this._innerHTML || "";
-      },
-      textContent: "",
-    };
-    return element;
-  };
-
-  return {
-    querySelector: createElement,
-    querySelectorAll: () => [],
-    createElement,
-  };
-}
 
 function createRng(seed) {
   let value = seed;
@@ -120,7 +40,7 @@ function createRng(seed) {
 
 function createActualTournament() {
   const groups = Object.fromEntries(
-    app.GROUPS.map((group) => [group.id, shuffle(group.teams.map((team) => team.id))]),
+    GROUPS.map((group) => [group.id, shuffle(group.teams.map((team) => team.id))]),
   );
   const thirdGroups = randomValidThirdGroups(groups);
   const base = {
@@ -169,15 +89,15 @@ function createRecord(id, name, groups, thirdGroups, picks) {
 
 function randomGroups() {
   return Object.fromEntries(
-    app.GROUPS.map((group) => [group.id, shuffle(group.teams.map((team) => team.id))]),
+    GROUPS.map((group) => [group.id, shuffle(group.teams.map((team) => team.id))]),
   );
 }
 
 function randomValidThirdGroups(groups) {
-  const groupIds = app.GROUPS.map((group) => group.id);
+  const groupIds = GROUPS.map((group) => group.id);
   for (let attempt = 0; attempt < 2000; attempt += 1) {
     const thirdGroups = shuffle(groupIds).slice(0, 8).sort();
-    const rounds = app.getBracketRoundsFromPrediction({ groups, thirdGroups, picks: {} });
+    const rounds = getBracketRoundsFromPrediction({ groups, thirdGroups, picks: {} });
     if (rounds.length) return thirdGroups;
   }
   throw new Error("Could not generate a valid third-place allocation");
@@ -186,7 +106,7 @@ function randomValidThirdGroups(groups) {
 function fillBracketPicks(record, chooseHome) {
   const next = { ...record, groups: clone(record.groups), thirdGroups: [...record.thirdGroups], picks: { ...record.picks } };
   for (let pass = 0; pass < 80; pass += 1) {
-    const rounds = app.getBracketRoundsFromPrediction(next);
+    const rounds = getBracketRoundsFromPrediction(next);
     const pending = rounds
       .flatMap((round) => round.matches)
       .find((match) => match.home && match.away && !next.picks[match.id]);
@@ -198,8 +118,7 @@ function fillBracketPicks(record, chooseHome) {
 }
 
 function finalizeRecord(record) {
-  const final = app
-    .getBracketRoundsFromPrediction(record)
+  const final = getBracketRoundsFromPrediction(record)
     .find((round) => round.key === "final")
     ?.matches.find((match) => match.id === "m104");
   const champion = getWinner(final);
@@ -218,7 +137,7 @@ function getWinner(match) {
 }
 
 function calculateExpectedScore(record, actual) {
-  const groupRows = app.GROUPS.map((group) => {
+  const groupRows = GROUPS.map((group) => {
     const predicted = record.groups[group.id] || [];
     const real = actual.groups[group.id] || [];
     const exactPlaces = predicted.filter((teamId, index) => real[index] === teamId).length;
@@ -245,7 +164,7 @@ function calculateExpectedScore(record, actual) {
   }, {});
 
   const groups = groupRows.reduce((sum, row) => sum + row.points, 0);
-  const thirds = thirdTeamHits.length * app.SCORING.bestThird;
+  const thirds = thirdTeamHits.length * SCORING.bestThird;
   const playoff = playoffHits.reduce((sum, hit) => sum + hit.points, 0);
 
   return {
@@ -283,12 +202,12 @@ function getRoundKey(matchId) {
 }
 
 function printReport(actual, report) {
-  const actualChampion = app.TEAM_BY_ID[actual.picks.m104] || { name: "не выбран" };
+  const actualChampion = TEAM_BY_ID[actual.picks.m104] || { name: "не выбран" };
   console.log(`Seed: ${SEED}`);
   console.log(`Моковый чемпион: ${actualChampion.name}`);
   console.log(
     `Лучшие третьи места: ${actual.thirdGroups
-      .map((groupId) => app.TEAM_BY_ID[actual.groups[groupId][2]].name)
+      .map((groupId) => TEAM_BY_ID[actual.groups[groupId][2]].name)
       .join(", ")}`,
   );
   console.log("");

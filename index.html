@@ -125,43 +125,53 @@
                 <div class="stage-head">
                   <div>
                     <h2>Live-таблица</h2>
+                    <span>Таблица и сохраненный выбор находятся на главной странице ниже формы.</span>
                   </div>
-                  <button class="ghost-button" id="refreshLive" type="button">Обновить</button>
+                  <button class="ghost-button" id="dashboardJump" type="button">К таблице</button>
                 </div>
-                <div class="live-panel">
-                  <div class="live-head">
-                    <div>
-                      <strong>Текущие очки игроков</strong>
-                    </div>
-                  </div>
-                  <div class="live-table" id="liveLeaderboard"></div>
-                </div>
-                <section class="saved-selection" id="savedSelection" hidden>
-                  <div class="saved-selection-head">
-                    <div>
-                      <h3>Ваш сохраненный выбор</h3>
-                      <span id="savedPredictionMeta">—</span>
-                    </div>
-                  </div>
-                  <div class="saved-selection-grid">
-                    <article class="saved-block">
-                      <h4>Группы</h4>
-                      <div class="saved-groups" id="savedGroups"></div>
-                    </article>
-                    <article class="saved-block">
-                      <h4>Третьи места</h4>
-                      <div class="saved-thirds" id="savedThirds"></div>
-                    </article>
-                    <article class="saved-block saved-block-wide">
-                      <h4>Сетка турнира</h4>
-                      <div class="saved-bracket" id="savedBracket"></div>
-                    </article>
-                  </div>
-                </section>
               </section>
             </div>
           </section>
         </div>
+
+        <section class="landing-dashboard" id="landingDashboard" aria-label="Live-таблица и сохраненный выбор">
+          <div class="section-heading dashboard-heading">
+            <div>
+              <h2>Live-таблица</h2>
+            </div>
+            <button class="ghost-button" id="refreshLive" type="button">Обновить</button>
+          </div>
+          <div class="live-panel">
+            <div class="live-head">
+              <div>
+                <strong>Текущие очки игроков</strong>
+              </div>
+            </div>
+            <div class="live-table" id="liveLeaderboard"></div>
+          </div>
+          <section class="saved-selection" id="savedSelection" hidden>
+            <div class="saved-selection-head">
+              <div>
+                <h3>Ваш сохраненный выбор</h3>
+                <span id="savedPredictionMeta">—</span>
+              </div>
+            </div>
+            <div class="saved-selection-grid">
+              <article class="saved-block">
+                <h4>Группы</h4>
+                <div class="saved-groups" id="savedGroups"></div>
+              </article>
+              <article class="saved-block">
+                <h4>Третьи места</h4>
+                <div class="saved-thirds" id="savedThirds"></div>
+              </article>
+              <article class="saved-block saved-block-wide">
+                <h4>Сетка турнира</h4>
+                <div class="saved-bracket" id="savedBracket"></div>
+              </article>
+            </div>
+          </section>
+        </section>
 
         <footer class="site-footer">
         <section class="scoring-section" aria-label="Правила начисления очков">

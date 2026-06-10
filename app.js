@@ -265,6 +265,8 @@ const nodes = {
   savedGroups: document.querySelector("#savedGroups"),
   savedThirds: document.querySelector("#savedThirds"),
   savedBracket: document.querySelector("#savedBracket"),
+  landingDashboard: document.querySelector("#landingDashboard"),
+  dashboardJump: document.querySelector("#dashboardJump"),
   openLeaderboard: document.querySelector("#openLeaderboard"),
   closeLeaderboard: document.querySelector("#closeLeaderboard"),
   leaderboardModal: document.querySelector("#leaderboardModal"),
@@ -285,7 +287,11 @@ function boot() {
   nodes.backToThirds?.addEventListener("click", () => setStage("thirds"));
   nodes.savePrediction?.addEventListener("click", savePrediction);
   nodes.editBracket?.addEventListener("click", () => setStage("bracket"));
-  nodes.goToLive?.addEventListener("click", () => setStage("live"));
+  nodes.goToLive?.addEventListener("click", () => {
+    setStage("live");
+    scrollToDashboard();
+  });
+  nodes.dashboardJump?.addEventListener("click", scrollToDashboard);
   nodes.refreshLive?.addEventListener("click", handleLiveRefresh);
   nodes.openLeaderboard?.addEventListener("click", openLeaderboard);
   nodes.closeLeaderboard?.addEventListener("click", () => nodes.leaderboardModal.close());
@@ -580,6 +586,10 @@ function setStage(stage) {
   state.stage = stage;
   persistDraft();
   render();
+}
+
+function scrollToDashboard() {
+  nodes.landingDashboard?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
 function countTouchedGroups() {
@@ -1252,11 +1262,11 @@ function renderSavedBracket(record) {
   }
 
   const tree = document.createElement("div");
-  tree.className = "saved-bracket-tree";
+  tree.className = "bracket-tree saved-bracket-tree";
   buildBracketLayout(rounds).forEach((round) => {
     const column = document.createElement("div");
-    column.className = `saved-bracket-round ${round.side}`;
-    column.innerHTML = `<h5>${round.title}</h5>`;
+    column.className = `round saved-bracket-round ${round.side}`;
+    column.innerHTML = `<h3>${round.title}</h3>`;
     round.matches.forEach((match) => column.appendChild(renderSavedMatch(match)));
     tree.appendChild(column);
   });
@@ -1264,8 +1274,10 @@ function renderSavedBracket(record) {
 }
 
 function renderSavedMatch(match) {
-  const card = document.createElement("div");
-  card.className = "saved-match";
+  const card = document.createElement("article");
+  card.className = "match saved-match";
+  card.dataset.code = match.code;
+  card.innerHTML = `<div class="match-title">${match.title}</div>`;
   card.appendChild(renderSavedPick(match.home, match.winnerId));
   card.appendChild(renderSavedPick(match.away, match.winnerId));
   return card;
@@ -1273,7 +1285,7 @@ function renderSavedMatch(match) {
 
 function renderSavedPick(item, winnerId) {
   const row = document.createElement("div");
-  row.className = `saved-pick${item?.id === winnerId ? " selected" : ""}`;
+  row.className = `pick-row saved-pick${item?.id === winnerId ? " selected" : ""}`;
   row.innerHTML = item
     ? `<span class="flag">${flagMarkup(item)}</span><span>${item.name}</span>`
     : `<span class="flag">·</span><span>ожидает победителя</span>`;

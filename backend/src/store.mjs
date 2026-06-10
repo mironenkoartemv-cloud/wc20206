@@ -26,6 +26,12 @@ export async function saveDb(db) {
   await saveDbToFile(db);
 }
 
+export function getStorageInfo() {
+  return {
+    mode: DATABASE_URL ? "postgres" : "file",
+  };
+}
+
 async function loadDbFromFile() {
   try {
     return normalizeDb(JSON.parse(await fs.readFile(DATA_FILE, "utf8")));

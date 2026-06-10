@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import http from "node:http";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { loadDb, saveDb } from "./src/store.mjs";
+import { getStorageInfo, loadDb, saveDb } from "./src/store.mjs";
 import {
   TEAM_BY_ID,
   calculateLiveScoreDetailed,
@@ -53,7 +53,7 @@ server.listen(PORT, () => {
 
 async function routeApi(request, response, url) {
   if (request.method === "GET" && url.pathname === "/api/health") {
-    sendJson(response, 200, { ok: true, service: "chexx-wc2026-backend" });
+    sendJson(response, 200, { ok: true, service: "chexx-wc2026-backend", storage: getStorageInfo() });
     return;
   }
 

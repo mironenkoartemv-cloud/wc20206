@@ -71,6 +71,7 @@ async function routeApi(request, response, url) {
     sendJson(response, 200, {
       available: !prediction,
       reason: prediction ? "prediction_exists" : null,
+      prediction: prediction ? toFrontendPrediction(prediction, player) : null,
     });
     return;
   }
@@ -310,6 +311,29 @@ async function routeApi(request, response, url) {
     };
     await saveDb(fresh);
     sendJson(response, 200, { ok: true });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/admin/db") {
+    if (!isAdmin(request)) {
+      sendJson(response, 401, { error: "unauthorized", message: "Нужен admin token." });
+      return;
+    }
+    sendJson(response, 200, await loadDb());
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/admin/db") {
+    if (!isAdmin(request)) {
+      sendJson(response, 401, { error: "unauthorized", message: "Нужен admin token." });
+      return;
+    }
+    const body = await readJsonBody(request);
+    await saveDb(body);
+    sendJson(response, 200, {
+      ok: true,
+      leaderboard: buildLeaderboard(await loadDb()),
+    });
     return;
   }
 

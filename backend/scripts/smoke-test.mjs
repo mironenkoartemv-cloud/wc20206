@@ -23,6 +23,7 @@ const saveResponse = await request("/api/predictions/me", {
 
 await request("/api/admin/results/mock", {
   method: "POST",
+  admin: true,
   body: {
     groups: prediction.groups,
     thirdGroups: prediction.thirdGroups,
@@ -105,6 +106,7 @@ async function request(path, options = {}) {
     headers: {
       "content-type": "application/json",
       ...(options.token ? { authorization: `Bearer ${options.token}` } : {}),
+      ...(options.admin && process.env.ADMIN_TOKEN ? { "x-admin-token": process.env.ADMIN_TOKEN } : {}),
     },
     body: options.body ? JSON.stringify(options.body) : undefined,
   });

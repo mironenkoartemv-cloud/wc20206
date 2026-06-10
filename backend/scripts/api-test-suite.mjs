@@ -179,6 +179,8 @@ await test("prediction with mismatched champion is rejected", async () => {
 await test("saved player name is unavailable", async () => {
   const availability = await request("/api/players/availability?displayName=alpha");
   assert.equal(availability.body.available, false);
+  assert.equal(availability.body.prediction.name, "Alpha");
+  assert.equal(availability.body.prediction.championId, perfectPrediction.championTeamId);
   const duplicatePlayer = await request("/api/players", {
     method: "POST",
     body: { displayName: " alpha " },
@@ -254,6 +256,23 @@ await test("perfect mock result gives 119 points and sorts leaderboard", async (
   assert.equal(alphaRow.totalPoints, 119);
   assert.ok(betaRow.totalPoints < alphaRow.totalPoints);
   assert.equal(leaderboard.body.rows[0].playerId, alpha.player.id);
+});
+
+await test("admin DB export and import preserve saved predictions", async () => {
+  const exported = await request("/api/admin/db", { admin: true });
+  assert.equal(exported.body.predictions.length, 3);
+
+  await request("/api/admin/reset", { method: "POST", admin: true });
+  const empty = await request("/api/leaderboard");
+  assert.equal(empty.body.rows.length, 0);
+
+  const imported = await request("/api/admin/db", {
+    method: "POST",
+    admin: true,
+    body: exported.body,
+  });
+  assert.equal(imported.body.ok, true);
+  assert.equal(imported.body.leaderboard.rows.length, 3);
 });
 
 await test("unknown API route returns 404", async () => {

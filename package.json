@@ -13,5 +13,8 @@
     "backend:test": "API_BASE=http://localhost:8788 ADMIN_TOKEN=test-admin node backend/scripts/api-test-suite.mjs",
     "simulate": "node scripts/score-simulation.mjs",
     "check": "node --check app.js && node --check shared/third-place-matrix.mjs && node --check shared/bracket-topology.mjs && node --check backend/server.mjs && node --check backend/src/tournament.mjs && node --check backend/scripts/smoke-test.mjs && node --check backend/scripts/api-test-suite.mjs && node --check scripts/score-simulation.mjs && node --check scripts/check-third-place-matrix.mjs && node --check scripts/check-bracket-topology.mjs && node scripts/check-third-place-matrix.mjs && node scripts/check-bracket-topology.mjs"
+  },
+  "dependencies": {
+    "pg": "^8.21.0"
   }
 }

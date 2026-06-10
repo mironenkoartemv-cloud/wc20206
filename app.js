@@ -447,16 +447,23 @@ function handlePlayerNameInput() {
     try {
       const response = await checkPlayerNameAvailability(name);
       if (version !== nameCheckVersion) return;
+      backendMode = true;
       if (response.available) {
+        if (!readStorage(STORAGE_PLAYER_TOKEN)) currentSavedPrediction = null;
         setStartButtonState({ disabled: false, message: "" });
+        renderSavedPrediction();
         return;
       }
+      currentSavedPrediction = response.prediction || null;
+      renderSavedPrediction();
       setStartButtonState({
         disabled: true,
         message: "Игрок с таким именем уже сохранил прогноз.",
       });
     } catch {
       if (version !== nameCheckVersion) return;
+      if (!readStorage(STORAGE_PLAYER_TOKEN)) currentSavedPrediction = null;
+      renderSavedPrediction();
       setStartButtonState({
         disabled: true,
         message: "Не удалось проверить имя. Попробуй еще раз.",
@@ -468,10 +475,15 @@ function handlePlayerNameInput() {
 async function ensurePlayerNameAvailable(displayName) {
   try {
     const response = await checkPlayerNameAvailability(displayName);
+    backendMode = true;
     if (response.available) {
+      if (!readStorage(STORAGE_PLAYER_TOKEN)) currentSavedPrediction = null;
       setStartButtonState({ disabled: false, message: "" });
+      renderSavedPrediction();
       return true;
     }
+    currentSavedPrediction = response.prediction || null;
+    renderSavedPrediction();
     setStartButtonState({
       disabled: true,
       message: "Игрок с таким именем уже сохранил прогноз.",
@@ -1027,8 +1039,8 @@ function isPredictionComplete() {
 }
 
 function getSavedCurrentPrediction() {
-  if (!state.player) return null;
   if (backendMode) return currentSavedPrediction;
+  if (!state.player) return null;
   return getPredictions().find((record) => record.id === state.player.id) || null;
 }
 
@@ -1107,7 +1119,11 @@ function getActualResults() {
 async function refreshActualResultsFromSource({ refreshProvider = false } = {}) {
   try {
     if (refreshProvider) {
-      await apiRequest("/api/results/refresh", { method: "POST" });
+      try {
+        await apiRequest("/api/results/refresh", { method: "POST" });
+      } catch (error) {
+        console.warn("Provider refresh failed, loading saved leaderboard.", error);
+      }
     }
     await syncBackendData();
     renderStatus();
@@ -1139,6 +1155,24 @@ async function handleLiveRefresh() {
 function renderLiveLeaderboard() {
   if (!nodes.liveLeaderboard) return;
 
+  if (!backendMode && !serverLeaderboard) {
+    nodes.liveLeaderboard.innerHTML = "";
+    const empty = document.createElement("div");
+    empty.className = "live-empty";
+    empty.textContent = "Не удалось загрузить таблицу с сервера. Нажми «Обновить».";
+    nodes.liveLeaderboard.appendChild(empty);
+    return;
+  }
+
+  if (backendMode && !serverLeaderboard) {
+    nodes.liveLeaderboard.innerHTML = "";
+    const empty = document.createElement("div");
+    empty.className = "live-empty";
+    empty.textContent = "Загружаем таблицу участников.";
+    nodes.liveLeaderboard.appendChild(empty);
+    return;
+  }
+
   if (backendMode && serverLeaderboard) {
     nodes.liveLeaderboard.innerHTML = "";
     if (!serverLeaderboard.rows.length) {
@@ -1162,35 +1196,6 @@ function renderLiveLeaderboard() {
     });
     return;
   }
-
-  const actual = getActualResults();
-  const predictions = getPredictions()
-    .map((record) => ({
-      ...record,
-      score: calculateLiveScore(record, actual),
-    }))
-    .sort((a, b) => b.score - a.score || new Date(a.savedAt) - new Date(b.savedAt));
-
-  nodes.liveLeaderboard.innerHTML = "";
-  if (!predictions.length) {
-    const empty = document.createElement("div");
-    empty.className = "live-empty";
-    empty.textContent = "Сохрани первый прогноз, чтобы он появился в таблице.";
-    nodes.liveLeaderboard.appendChild(empty);
-    return;
-  }
-
-  predictions.forEach((record, index) => {
-    const row = document.createElement("div");
-    row.className = "live-row";
-    row.innerHTML = `
-      <strong>${index + 1}</strong>
-      <span>${record.name}</span>
-      <span>${record.championName || "чемпион не выбран"}</span>
-      <strong>${record.score}</strong>
-    `;
-    nodes.liveLeaderboard.appendChild(row);
-  });
 }
 
 function renderSavedPrediction(record = getSavedCurrentPrediction()) {

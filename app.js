@@ -518,18 +518,18 @@ async function ensurePlayerNameAvailable(displayName) {
   }
 }
 
-async function syncBackendData() {
+async function syncBackendData({ loadActualResults = false } = {}) {
   const token = readStorage(STORAGE_PLAYER_TOKEN);
   const [leaderboard, actualResults, config, me] = await Promise.all([
     apiRequest("/api/leaderboard"),
-    apiRequest("/api/actual-results"),
+    loadActualResults ? apiRequest("/api/actual-results") : Promise.resolve(null),
     apiRequest("/api/config").catch(() => null),
     token ? apiRequest("/api/me").catch(() => null) : Promise.resolve(null),
   ]);
 
   backendMode = true;
   serverLeaderboard = leaderboard;
-  serverActualResults = actualResults.actualResults;
+  if (actualResults?.actualResults) serverActualResults = actualResults.actualResults;
   if (config?.predictionWindow) predictionWindow = config.predictionWindow;
   if (me?.player) {
     state.player = {
@@ -1166,7 +1166,7 @@ function getActualResults() {
   }
 }
 
-async function refreshActualResultsFromSource({ refreshProvider = false } = {}) {
+async function refreshActualResultsFromSource({ refreshProvider = false, loadActualResults = activeDashboardTab === "results" } = {}) {
   try {
     if (refreshProvider) {
       try {
@@ -1175,7 +1175,7 @@ async function refreshActualResultsFromSource({ refreshProvider = false } = {}) 
         console.warn("Provider refresh failed, loading saved leaderboard.", error);
       }
     }
-    await syncBackendData();
+    await syncBackendData({ loadActualResults: refreshProvider || loadActualResults });
     renderStatus();
     renderConfirmation();
     renderLiveLeaderboard();
@@ -1254,6 +1254,7 @@ function renderLiveLeaderboard() {
 function setDashboardTab(tab) {
   activeDashboardTab = tab === "results" ? "results" : "leaderboard";
   renderDashboardTabs();
+  if (activeDashboardTab === "results") refreshActualResultsFromSource({ loadActualResults: true });
 }
 
 function renderDashboardTabs() {

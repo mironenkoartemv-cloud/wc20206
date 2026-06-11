@@ -279,7 +279,6 @@ async function routeApi(request, response, url) {
 
   if (request.method === "GET" && url.pathname === "/api/leaderboard") {
     const db = await loadDb();
-    if (db.predictions.length) await ensureFreshActualResults(db);
     sendJson(response, 200, buildLeaderboard(db));
     return;
   }

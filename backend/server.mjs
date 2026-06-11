@@ -23,6 +23,7 @@ const CHAMPIONAT_TABLE_URL =
   process.env.CHAMPIONAT_TABLE_URL || "https://www.championat.com/football/_worldcup/tournament/6858/table/";
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 const PREDICTION_CLOSES_AT = process.env.PREDICTION_CLOSES_AT || "2026-06-11T19:00:00.000Z";
+const RESULTS_REFRESH_INTERVAL_MS = Number(process.env.RESULTS_REFRESH_INTERVAL_MS || 60 * 60 * 1000);
 const TOKEN_BYTES = 32;
 
 const server = http.createServer(async (request, response) => {
@@ -278,12 +279,14 @@ async function routeApi(request, response, url) {
 
   if (request.method === "GET" && url.pathname === "/api/leaderboard") {
     const db = await loadDb();
+    if (db.predictions.length) await ensureFreshActualResults(db);
     sendJson(response, 200, buildLeaderboard(db));
     return;
   }
 
   if (request.method === "GET" && url.pathname === "/api/actual-results") {
     const db = await loadDb();
+    await ensureFreshActualResults(db);
     sendJson(response, 200, { actualResults: sanitizeActualResults(db.actualResults) });
     return;
   }
@@ -397,6 +400,7 @@ async function routeApi(request, response, url) {
 }
 
 async function refreshActualResults() {
+  let primaryResults = null;
   try {
     const [groupsResponse, gamesResponse] = await Promise.all([
       fetch(`${WORLD_CUP_API_BASE}/get/groups`),
@@ -404,20 +408,59 @@ async function refreshActualResults() {
     ]);
     if (!groupsResponse.ok) throw new Error(`Groups source failed: ${groupsResponse.status}`);
     if (!gamesResponse.ok) throw new Error(`Games source failed: ${gamesResponse.status}`);
-    const actualResults = normalizeWorldCupApiResults(await groupsResponse.json(), await gamesResponse.json());
-    if (Object.keys(actualResults.groupTables || {}).length) return actualResults;
+    primaryResults = normalizeWorldCupApiResults(await groupsResponse.json(), await gamesResponse.json());
+    if (hasStartedGroupResults(primaryResults)) return primaryResults;
   } catch (error) {
     console.warn("Primary results source failed, trying Championat fallback.", error);
   }
 
-  const championatResponse = await fetch(CHAMPIONAT_TABLE_URL, {
-    headers: {
-      "user-agent": "Mozilla/5.0 ChexxWc2026Bot/1.0",
-      accept: "text/html,application/xhtml+xml",
-    },
-  });
-  if (!championatResponse.ok) throw new Error(`Championat source failed: ${championatResponse.status}`);
-  return normalizeChampionatResults(await championatResponse.text());
+  try {
+    const championatResponse = await fetch(CHAMPIONAT_TABLE_URL, {
+      headers: {
+        "user-agent": "Mozilla/5.0 ChexxWc2026Bot/1.0",
+        accept: "text/html,application/xhtml+xml",
+      },
+    });
+    if (!championatResponse.ok) throw new Error(`Championat source failed: ${championatResponse.status}`);
+    const fallbackResults = normalizeChampionatResults(await championatResponse.text());
+    if (hasDisplayableGroupTables(fallbackResults)) return fallbackResults;
+  } catch (error) {
+    console.warn("Fallback results source failed.", error);
+  }
+
+  if (hasDisplayableGroupTables(primaryResults)) return primaryResults;
+  throw new Error("No results source returned group tables.");
+}
+
+async function ensureFreshActualResults(db) {
+  if (!shouldRefreshActualResults(db.actualResults)) return false;
+  try {
+    db.actualResults = await refreshActualResults();
+    await saveDb(db);
+    return true;
+  } catch (error) {
+    console.warn("Scheduled results refresh failed", error);
+    return false;
+  }
+}
+
+function shouldRefreshActualResults(actualResults) {
+  if (actualResults?.source === "mock") return false;
+  if (!hasDisplayableGroupTables(actualResults)) return true;
+  const updatedAt = new Date(actualResults.updatedAt || 0).getTime();
+  if (!Number.isFinite(updatedAt)) return true;
+  return Date.now() - updatedAt >= RESULTS_REFRESH_INTERVAL_MS;
+}
+
+function hasStartedGroupResults(actualResults) {
+  return Object.values(actualResults?.groupTables || {}).some((rows) =>
+    Array.isArray(rows) &&
+      rows.some((row) => Number(row.mp) > 0 || Number(row.pts) > 0 || Number(row.gf) > 0 || Number(row.ga) > 0),
+  );
+}
+
+function hasDisplayableGroupTables(actualResults) {
+  return Object.values(actualResults?.groupTables || {}).some((rows) => Array.isArray(rows) && rows.length > 0);
 }
 
 function buildLeaderboard(db) {

@@ -235,6 +235,8 @@ let serverActualResults = null;
 let currentSavedPrediction = null;
 let nameCheckTimer = null;
 let nameCheckVersion = 0;
+let predictionWindow = null;
+let activeDashboardTab = "leaderboard";
 
 const nodes = {
   playerForm: document.querySelector("#playerForm"),
@@ -252,7 +254,11 @@ const nodes = {
   summaryTitle: document.querySelector("#summaryTitle"),
   summaryText: document.querySelector("#summaryText"),
   liveLeaderboard: document.querySelector("#liveLeaderboard"),
+  worldResults: document.querySelector("#worldResults"),
   refreshLive: document.querySelector("#refreshLive"),
+  dashboardTabs: document.querySelectorAll("[data-dashboard-tab]"),
+  dashboardPanels: document.querySelectorAll("[data-dashboard-panel]"),
+  predictionWindowNote: document.querySelector("#predictionWindowNote"),
   toThirds: document.querySelector("#toThirds"),
   backToGroups: document.querySelector("#backToGroups"),
   toBracket: document.querySelector("#toBracket"),
@@ -292,6 +298,7 @@ function boot() {
     scrollToDashboard();
   });
   nodes.dashboardJump?.addEventListener("click", scrollToDashboard);
+  nodes.dashboardTabs?.forEach((tab) => tab.addEventListener("click", () => setDashboardTab(tab.dataset.dashboardTab)));
   nodes.refreshLive?.addEventListener("click", handleLiveRefresh);
   nodes.openLeaderboard?.addEventListener("click", openLeaderboard);
   nodes.closeLeaderboard?.addEventListener("click", () => nodes.leaderboardModal.close());
@@ -436,6 +443,11 @@ function setStartButtonState({ disabled, message = "" }) {
 function handlePlayerNameInput() {
   const name = nodes.playerName.value.trim();
   window.clearTimeout(nameCheckTimer);
+  if (isPredictionWindowClosed()) {
+    setStartButtonState({ disabled: true, message: "Прием прогнозов закрыт." });
+    renderSavedPrediction();
+    return;
+  }
   if (!name) {
     setStartButtonState({ disabled: true, message: "" });
     return;
@@ -473,6 +485,12 @@ function handlePlayerNameInput() {
 }
 
 async function ensurePlayerNameAvailable(displayName) {
+  if (isPredictionWindowClosed()) {
+    setStartButtonState({ disabled: true, message: "Прием прогнозов закрыт." });
+    nodes.playerName.reportValidity();
+    return false;
+  }
+
   try {
     const response = await checkPlayerNameAvailability(displayName);
     backendMode = true;
@@ -502,15 +520,17 @@ async function ensurePlayerNameAvailable(displayName) {
 
 async function syncBackendData() {
   const token = readStorage(STORAGE_PLAYER_TOKEN);
-  const [leaderboard, actualResults, me] = await Promise.all([
+  const [leaderboard, actualResults, config, me] = await Promise.all([
     apiRequest("/api/leaderboard"),
     apiRequest("/api/actual-results"),
+    apiRequest("/api/config").catch(() => null),
     token ? apiRequest("/api/me").catch(() => null) : Promise.resolve(null),
   ]);
 
   backendMode = true;
   serverLeaderboard = leaderboard;
   serverActualResults = actualResults.actualResults;
+  if (config?.predictionWindow) predictionWindow = config.predictionWindow;
   if (me?.player) {
     state.player = {
       id: me.player.id,
@@ -557,6 +577,7 @@ function render() {
   renderSummary();
   renderConfirmation();
   renderLiveLeaderboard();
+  renderWorldCupResults();
   renderSavedPrediction();
 }
 
@@ -569,7 +590,13 @@ function renderStatus() {
     : "чемпион не выбран";
   if (nodes.thirdCounter) nodes.thirdCounter.textContent = `${state.thirdGroups.length}/8 выбрано`;
   if (nodes.toBracket) nodes.toBracket.disabled = state.thirdGroups.length !== 8;
-  if (nodes.savePrediction) nodes.savePrediction.disabled = !isPredictionComplete();
+  if (nodes.savePrediction) nodes.savePrediction.disabled = !isPredictionComplete() || isPredictionWindowClosed();
+  if (nodes.playerStart && isPredictionWindowClosed()) nodes.playerStart.disabled = true;
+  if (nodes.predictionWindowNote) {
+    nodes.predictionWindowNote.textContent = isPredictionWindowClosed()
+      ? "Прием прогнозов закрыт."
+      : `Прием прогнозов до ${formatPredictionWindowClose()}.`;
+  }
 
   const activeStage = getActiveStage();
   document.querySelectorAll("[data-flow-stage]").forEach((stage) => {
@@ -602,6 +629,23 @@ function setStage(stage) {
 
 function scrollToDashboard() {
   nodes.landingDashboard?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+function isPredictionWindowClosed() {
+  return Boolean(predictionWindow?.closed);
+}
+
+function formatPredictionWindowClose() {
+  if (!predictionWindow?.closesAt) return "22:00 МСК";
+  const date = new Date(predictionWindow.closesAt);
+  if (!Number.isFinite(date.getTime())) return "22:00 МСК";
+  return new Intl.DateTimeFormat("ru-RU", {
+    day: "2-digit",
+    month: "long",
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZone: predictionWindow.timezone || "Europe/Moscow",
+  }).format(date);
 }
 
 function countTouchedGroups() {
@@ -1016,8 +1060,14 @@ function getChampion() {
 function renderSummary() {
   const champion = getChampion();
   const complete = isPredictionComplete();
+  const closed = isPredictionWindowClosed();
 
-  if (nodes.savePrediction) nodes.savePrediction.disabled = !complete;
+  if (nodes.savePrediction) nodes.savePrediction.disabled = !complete || closed;
+  if (closed) {
+    nodes.summaryTitle.textContent = "Прием прогнозов закрыт";
+    nodes.summaryText.textContent = "Новые прогнозы больше не принимаются.";
+    return;
+  }
   if (complete) {
     nodes.summaryTitle.textContent = `${champion.name} — чемпион по прогнозу ${state.player.name}`;
     nodes.summaryText.textContent = "Прогноз заполнен полностью. Его можно сохранить.";
@@ -1051,7 +1101,7 @@ function renderConfirmation(record = getSavedCurrentPrediction()) {
 
 async function savePrediction() {
   const champion = getChampion();
-  if (!state.player || !champion || !isPredictionComplete()) return;
+  if (!state.player || !champion || !isPredictionComplete() || isPredictionWindowClosed()) return;
   const record = {
     id: state.player.id,
     name: state.player.name,
@@ -1129,6 +1179,7 @@ async function refreshActualResultsFromSource({ refreshProvider = false } = {}) 
     renderStatus();
     renderConfirmation();
     renderLiveLeaderboard();
+    renderWorldCupResults();
     renderSavedPrediction();
     return;
   } catch (error) {
@@ -1136,6 +1187,7 @@ async function refreshActualResultsFromSource({ refreshProvider = false } = {}) 
   }
 
   renderLiveLeaderboard();
+  renderWorldCupResults();
   renderSavedPrediction();
 }
 
@@ -1154,6 +1206,7 @@ async function handleLiveRefresh() {
 
 function renderLiveLeaderboard() {
   if (!nodes.liveLeaderboard) return;
+  renderDashboardTabs();
 
   if (!backendMode && !serverLeaderboard) {
     nodes.liveLeaderboard.innerHTML = "";
@@ -1196,6 +1249,78 @@ function renderLiveLeaderboard() {
     });
     return;
   }
+}
+
+function setDashboardTab(tab) {
+  activeDashboardTab = tab === "results" ? "results" : "leaderboard";
+  renderDashboardTabs();
+}
+
+function renderDashboardTabs() {
+  nodes.dashboardTabs?.forEach((tab) => {
+    const active = tab.dataset.dashboardTab === activeDashboardTab;
+    tab.classList.toggle("active", active);
+    tab.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  nodes.dashboardPanels?.forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.dashboardPanel !== activeDashboardTab);
+  });
+}
+
+function renderWorldCupResults() {
+  if (!nodes.worldResults) return;
+  renderDashboardTabs();
+  nodes.worldResults.innerHTML = "";
+
+  const actual = getActualResults();
+  const groupTables = actual?.groupTables || {};
+  const meta = document.createElement("div");
+  meta.className = "results-meta";
+  meta.textContent = `Источник: ${actual?.source || "не подключен"} · обновлено ${actual?.updatedAt ? formatDate(actual.updatedAt) : "ожидается"}`;
+  nodes.worldResults.appendChild(meta);
+
+  const groupsWithTables = GROUPS.filter((group) => Array.isArray(groupTables[group.id]) && groupTables[group.id].length);
+  if (!groupsWithTables.length) {
+    const empty = document.createElement("div");
+    empty.className = "live-empty";
+    empty.textContent = "Турнирные таблицы пока не получены. Нажми «Обновить», чтобы запросить источник данных.";
+    nodes.worldResults.appendChild(empty);
+    return;
+  }
+
+  const grid = document.createElement("div");
+  grid.className = "results-grid";
+  groupsWithTables.forEach((group) => {
+    const card = document.createElement("article");
+    card.className = "result-group";
+    card.innerHTML = `
+      <h3>Группа ${group.id}</h3>
+      <div class="result-row result-head">
+        <span>#</span>
+        <span>Команда</span>
+        <span>И</span>
+        <span>М</span>
+        <span>О</span>
+      </div>
+    `;
+
+    groupTables[group.id].forEach((row, index) => {
+      const teamItem = TEAM_BY_ID[row.teamId];
+      const item = document.createElement("div");
+      item.className = "result-row";
+      item.innerHTML = `
+        <span>${index + 1}</span>
+        <span class="result-team">${teamItem ? flagMarkup(teamItem) : "·"}<strong>${teamItem?.name || row.teamId || "Команда"}</strong></span>
+        <span>${Number(row.mp) || 0}</span>
+        <span>${Number(row.gf) || 0}-${Number(row.ga) || 0}</span>
+        <strong>${Number(row.pts) || 0}</strong>
+      `;
+      card.appendChild(item);
+    });
+    grid.appendChild(card);
+  });
+
+  nodes.worldResults.appendChild(grid);
 }
 
 function renderSavedPrediction(record = getSavedCurrentPrediction()) {

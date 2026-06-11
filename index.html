@@ -30,6 +30,7 @@
                 <input id="playerName" name="playerName" type="text" maxlength="32" autocomplete="name" placeholder="Например, Антон" />
                 <button class="primary-button" id="playerStart" type="submit">Начать</button>
               </div>
+              <span class="form-note" id="predictionWindowNote"></span>
             </form>
           </div>
           <div class="hero-prize">
@@ -141,13 +142,18 @@
             </div>
             <button class="ghost-button" id="refreshLive" type="button">Обновить</button>
           </div>
+          <div class="dashboard-tabs" role="tablist" aria-label="Данные турнира">
+            <button class="dashboard-tab active" data-dashboard-tab="leaderboard" type="button">Live-таблица</button>
+            <button class="dashboard-tab" data-dashboard-tab="results" type="button">Результаты ЧМ</button>
+          </div>
           <div class="live-panel">
-            <div class="live-head">
+            <div class="live-head" data-dashboard-panel="leaderboard">
               <div>
                 <strong>Текущие очки игроков</strong>
               </div>
             </div>
-            <div class="live-table" id="liveLeaderboard"></div>
+            <div class="live-table" id="liveLeaderboard" data-dashboard-panel="leaderboard"></div>
+            <div class="world-results hidden" id="worldResults" data-dashboard-panel="results"></div>
           </div>
           <section class="saved-selection" id="savedSelection" hidden>
             <div class="saved-selection-head">

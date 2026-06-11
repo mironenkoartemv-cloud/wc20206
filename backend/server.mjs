@@ -8,6 +8,7 @@ import {
   TEAM_BY_ID,
   calculateLiveScoreDetailed,
   getChampionFromPrediction,
+  normalizeChampionatResults,
   normalizePredictionPayload,
   normalizeWorldCupApiResults,
   toFrontendPrediction,
@@ -18,7 +19,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT_DIR = path.resolve(__dirname, "..");
 const PORT = Number(process.env.PORT || 8787);
 const WORLD_CUP_API_BASE = process.env.WORLD_CUP_API_BASE || "https://worldcup26.ir";
+const CHAMPIONAT_TABLE_URL =
+  process.env.CHAMPIONAT_TABLE_URL || "https://www.championat.com/football/_worldcup/tournament/6858/table/";
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
+const PREDICTION_CLOSES_AT = process.env.PREDICTION_CLOSES_AT || "2026-06-11T19:00:00.000Z";
 const TOKEN_BYTES = 32;
 
 const server = http.createServer(async (request, response) => {
@@ -53,7 +57,17 @@ server.listen(PORT, () => {
 
 async function routeApi(request, response, url) {
   if (request.method === "GET" && url.pathname === "/api/health") {
-    sendJson(response, 200, { ok: true, service: "chexx-wc2026-backend", storage: getStorageInfo() });
+    sendJson(response, 200, {
+      ok: true,
+      service: "chexx-wc2026-backend",
+      storage: getStorageInfo(),
+      predictionWindow: getPredictionWindow(),
+    });
+    return;
+  }
+
+  if (request.method === "GET" && url.pathname === "/api/config") {
+    sendJson(response, 200, { predictionWindow: getPredictionWindow() });
     return;
   }
 
@@ -77,6 +91,7 @@ async function routeApi(request, response, url) {
   }
 
   if (request.method === "POST" && url.pathname === "/api/players") {
+    if (sendPredictionClosed(response)) return;
     const body = await readJsonBody(request);
     const db = await loadDb();
     const displayName = normalizeDisplayName(body.displayName).slice(0, 32).trim();
@@ -117,6 +132,7 @@ async function routeApi(request, response, url) {
   }
 
   if (request.method === "POST" && url.pathname === "/api/predictions") {
+    if (sendPredictionClosed(response)) return;
     const body = await readJsonBody(request);
     const db = await loadDb();
     const displayName = normalizeDisplayName(body.displayName).slice(0, 32).trim();
@@ -210,6 +226,7 @@ async function routeApi(request, response, url) {
   }
 
   if (request.method === "PUT" && url.pathname === "/api/predictions/me") {
+    if (sendPredictionClosed(response)) return;
     const context = await requirePlayer(request, response);
     if (!context) return;
     const existingPrediction = findPredictionByPlayerId(context.db, context.player.id);
@@ -380,13 +397,27 @@ async function routeApi(request, response, url) {
 }
 
 async function refreshActualResults() {
-  const [groupsResponse, gamesResponse] = await Promise.all([
-    fetch(`${WORLD_CUP_API_BASE}/get/groups`),
-    fetch(`${WORLD_CUP_API_BASE}/get/games`),
-  ]);
-  if (!groupsResponse.ok) throw new Error(`Groups source failed: ${groupsResponse.status}`);
-  if (!gamesResponse.ok) throw new Error(`Games source failed: ${gamesResponse.status}`);
-  return normalizeWorldCupApiResults(await groupsResponse.json(), await gamesResponse.json());
+  try {
+    const [groupsResponse, gamesResponse] = await Promise.all([
+      fetch(`${WORLD_CUP_API_BASE}/get/groups`),
+      fetch(`${WORLD_CUP_API_BASE}/get/games`),
+    ]);
+    if (!groupsResponse.ok) throw new Error(`Groups source failed: ${groupsResponse.status}`);
+    if (!gamesResponse.ok) throw new Error(`Games source failed: ${gamesResponse.status}`);
+    const actualResults = normalizeWorldCupApiResults(await groupsResponse.json(), await gamesResponse.json());
+    if (Object.keys(actualResults.groupTables || {}).length) return actualResults;
+  } catch (error) {
+    console.warn("Primary results source failed, trying Championat fallback.", error);
+  }
+
+  const championatResponse = await fetch(CHAMPIONAT_TABLE_URL, {
+    headers: {
+      "user-agent": "Mozilla/5.0 ChexxWc2026Bot/1.0",
+      accept: "text/html,application/xhtml+xml",
+    },
+  });
+  if (!championatResponse.ok) throw new Error(`Championat source failed: ${championatResponse.status}`);
+  return normalizeChampionatResults(await championatResponse.text());
 }
 
 function buildLeaderboard(db) {
@@ -455,6 +486,30 @@ function publicPlayer(player) {
     displayName: player.displayName,
     createdAt: player.createdAt,
   };
+}
+
+function getPredictionWindow() {
+  const closesAt = new Date(PREDICTION_CLOSES_AT);
+  const validDate = Number.isFinite(closesAt.getTime());
+  const fallbackClosesAt = new Date("2026-06-11T19:00:00.000Z");
+  const closeDate = validDate ? closesAt : fallbackClosesAt;
+  const closed = Date.now() >= closeDate.getTime();
+  return {
+    closesAt: closeDate.toISOString(),
+    timezone: "Europe/Moscow",
+    closed,
+  };
+}
+
+function sendPredictionClosed(response) {
+  const window = getPredictionWindow();
+  if (!window.closed) return false;
+  sendJson(response, 403, {
+    error: "predictions_closed",
+    message: "Прием прогнозов закрыт.",
+    predictionWindow: window,
+  });
+  return true;
 }
 
 function normalizeDisplayName(value) {

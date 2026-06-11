@@ -185,6 +185,59 @@ export const API_TEAM_ID_TO_LOCAL_ID = {
   48: "panama",
 };
 
+const CHAMPIONAT_TEAM_NAME_TO_LOCAL_ID = {
+  "Мексика": "mexico",
+  "ЮАР": "south-africa",
+  "Южная Корея": "south-korea",
+  "Чехия": "czechia",
+  "Канада": "canada",
+  "Катар": "qatar",
+  "Швейцария": "switzerland",
+  "Босния и Герцеговина": "bosnia",
+  "Бразилия": "brazil",
+  "Марокко": "morocco",
+  "Гаити": "haiti",
+  "Шотландия": "scotland",
+  "США": "usa",
+  "Парагвай": "paraguay",
+  "Австралия": "australia",
+  "Турция": "turkey",
+  "Германия": "germany",
+  "Кюрасао": "curacao",
+  "Кот-д’Ивуар": "cote-divoire",
+  "Кот-д'Ивуар": "cote-divoire",
+  "Эквадор": "ecuador",
+  "Нидерланды": "netherlands",
+  "Япония": "japan",
+  "Швеция": "sweden",
+  "Тунис": "tunisia",
+  "Бельгия": "belgium",
+  "Египет": "egypt",
+  "Иран": "iran",
+  "Новая Зеландия": "new-zealand",
+  "Испания": "spain",
+  "Кабо-Верде": "cabo-verde",
+  "Саудовская Аравия": "saudi-arabia",
+  "Уругвай": "uruguay",
+  "Франция": "france",
+  "Сенегал": "senegal",
+  "Ирак": "iraq",
+  "Норвегия": "norway",
+  "Аргентина": "argentina",
+  "Алжир": "algeria",
+  "Австрия": "austria",
+  "Иордания": "jordan",
+  "Португалия": "portugal",
+  "ДР Конго": "dr-congo",
+  "Демократическая Республика Конго": "dr-congo",
+  "Узбекистан": "uzbekistan",
+  "Колумбия": "colombia",
+  "Англия": "england",
+  "Хорватия": "croatia",
+  "Гана": "ghana",
+  "Панама": "panama",
+};
+
 export const ROUND32_DEFS = [
   matchDef(73, "2A", "2B"),
   matchDef(74, "1E", "3A/B/C/D/F"),
@@ -516,10 +569,11 @@ export function toFrontendPrediction(prediction, player) {
 }
 
 export function normalizeWorldCupApiResults(groupsPayload, gamesPayload) {
-  const groups = normalizeApiGroups(groupsPayload.groups || []);
-  const thirdGroups = normalizeApiThirdGroups(groupsPayload.groups || []);
+  const groupTables = normalizeApiGroupTables(groupsPayload.groups || []);
+  const groups = getStartedGroupsFromTables(groupTables);
+  const thirdGroups = normalizeThirdGroupsFromTables(groupTables);
   const thirdPlaces = thirdGroups
-    .map((groupId) => ({ groupId, teamId: groups?.[groupId]?.[2] }))
+    .map((groupId) => ({ groupId, teamId: groupTables?.[groupId]?.[2]?.teamId }))
     .filter((item) => item.teamId);
   const picks = normalizeApiKnockoutPicks(gamesPayload.games || []);
 
@@ -527,6 +581,7 @@ export function normalizeWorldCupApiResults(groupsPayload, gamesPayload) {
     source: "worldcup26.ir",
     updatedAt: new Date().toISOString(),
     groups,
+    groupTables,
     thirdGroups,
     thirdPlaces,
     picks,
@@ -537,33 +592,58 @@ export function normalizeWorldCupApiResults(groupsPayload, gamesPayload) {
   };
 }
 
-function normalizeApiGroups(apiGroups) {
+export function normalizeChampionatResults(html) {
+  const groupTables = parseChampionatGroupTables(html);
+  const groups = getStartedGroupsFromTables(groupTables);
+  const thirdGroups = normalizeThirdGroupsFromTables(groupTables);
+  const thirdPlaces = thirdGroups
+    .map((groupId) => ({ groupId, teamId: groupTables?.[groupId]?.[2]?.teamId }))
+    .filter((item) => item.teamId);
+
+  return {
+    source: "championat.com",
+    updatedAt: new Date().toISOString(),
+    groups,
+    groupTables,
+    thirdGroups,
+    thirdPlaces,
+    picks: {},
+    raw: {},
+  };
+}
+
+function normalizeApiGroupTables(apiGroups) {
   return Object.fromEntries(
     apiGroups
-      .filter((group) => /^[A-L]$/.test(group.name) && isApiGroupComplete(group))
+      .filter((group) => /^[A-L]$/.test(group.name))
       .map((group) => [
         group.name,
         [...group.teams]
           .sort(compareApiTableRows)
-          .map((row) => API_TEAM_ID_TO_LOCAL_ID[Number(row.team_id)])
-          .filter(Boolean),
+          .map((row) => apiTableRowToActualRow(group.name, row))
+          .filter((row) => row.teamId),
       ]),
   );
 }
 
-function normalizeApiThirdGroups(apiGroups) {
-  const completedGroups = apiGroups.filter((group) => /^[A-L]$/.test(group.name) && isApiGroupComplete(group));
+function normalizeThirdGroupsFromTables(groupTables) {
+  const completedGroups = Object.entries(groupTables).filter(([, rows]) => isGroupTableComplete(rows));
   if (completedGroups.length < 12) return [];
 
   return completedGroups
-    .map((group) => {
-      const sortedTeams = [...group.teams].sort(compareApiTableRows);
-      return { groupId: group.name, row: sortedTeams[2] };
-    })
+    .map(([groupId, rows]) => ({ groupId, row: rows[2] }))
     .filter((item) => item.row)
     .sort((a, b) => compareApiTableRows(a.row, b.row))
     .slice(0, 8)
     .map((item) => item.groupId);
+}
+
+function getStartedGroupsFromTables(groupTables) {
+  return Object.fromEntries(
+    Object.entries(groupTables)
+      .filter(([, rows]) => isGroupTableStarted(rows))
+      .map(([groupId, rows]) => [groupId, rows.map((row) => row.teamId)]),
+  );
 }
 
 function normalizeApiKnockoutPicks(apiGames) {
@@ -585,8 +665,28 @@ function compareApiTableRows(a, b) {
   );
 }
 
-function isApiGroupComplete(group) {
-  return group.teams.every((row) => Number(row.mp) >= 3);
+function apiTableRowToActualRow(groupId, row) {
+  const teamId = API_TEAM_ID_TO_LOCAL_ID[Number(row.team_id)];
+  return {
+    groupId,
+    teamId,
+    mp: Number(row.mp) || 0,
+    w: Number(row.w) || 0,
+    d: Number(row.d) || 0,
+    l: Number(row.l) || 0,
+    gf: Number(row.gf) || 0,
+    ga: Number(row.ga) || 0,
+    gd: Number(row.gd) || 0,
+    pts: Number(row.pts) || 0,
+  };
+}
+
+function isGroupTableStarted(rows) {
+  return Array.isArray(rows) && rows.some((row) => Number(row.mp) > 0);
+}
+
+function isGroupTableComplete(rows) {
+  return Array.isArray(rows) && rows.length === 4 && rows.every((row) => Number(row.mp) >= 3);
 }
 
 function isApiGameFinished(game) {
@@ -608,4 +708,74 @@ function apiMatchIdToPickId(matchNumber) {
   if (matchNumber >= 101 && matchNumber <= 102) return `sf-${matchNumber}`;
   if (matchNumber === 103 || matchNumber === 104) return `m${matchNumber}`;
   return `m${matchNumber}`;
+}
+
+function parseChampionatGroupTables(html) {
+  const groupTables = {};
+  for (const group of GROUPS) {
+    const titlePattern = new RegExp(`<div[^>]*results-table__title[^>]*>\\s*Группа\\s+${group.id}\\s*<\\/div>`, "i");
+    const titleMatch = titlePattern.exec(html);
+    const start = titleMatch ? titleMatch.index + titleMatch[0].length : -1;
+    if (start === -1) continue;
+    const tableStart = html.indexOf("<tbody", start);
+    const tableEnd = html.indexOf("</tbody>", tableStart);
+    if (tableStart === -1 || tableEnd === -1) continue;
+    const rows = parseChampionatGroupRows(group.id, html.slice(tableStart, tableEnd)).sort(compareApiTableRows);
+    if (rows.length) groupTables[group.id] = rows;
+  }
+  return groupTables;
+}
+
+function parseChampionatGroupRows(groupId, tbodyHtml) {
+  return [...String(tbodyHtml || "").matchAll(/<tr\b[\s\S]*?<\/tr>/gi)]
+    .map(([rowHtml]) => {
+      const nameMatch = rowHtml.match(
+        /<td[^>]*results-table__item[\s\S]*?<span[^>]*table-item__name[^>]*>([\s\S]*?)<\/span>/i,
+      );
+      if (!nameMatch) return null;
+      const name = htmlToText(nameMatch[1]);
+      const teamId = CHAMPIONAT_TEAM_NAME_TO_LOCAL_ID[normalizeChampionatTeamName(name)];
+      if (!teamId) return null;
+
+      const statCells = [...rowHtml.matchAll(/<td[^>]*data-fix="right"[^>]*>([\s\S]*?)<\/td>/gi)].map(([, cell]) =>
+        htmlToText(cell),
+      );
+      const [mp, w, d, l, goals = "0-0", pts] = statCells;
+      const [gf, ga] = String(goals).split("-").map((value) => Number(value) || 0);
+      const goalsFor = Number(gf) || 0;
+      const goalsAgainst = Number(ga) || 0;
+      return {
+        groupId,
+        teamId,
+        mp: Number(mp) || 0,
+        w: Number(w) || 0,
+        d: Number(d) || 0,
+        l: Number(l) || 0,
+        gf: goalsFor,
+        ga: goalsAgainst,
+        gd: goalsFor - goalsAgainst,
+        pts: Number(pts) || 0,
+      };
+    })
+    .filter(Boolean);
+}
+
+function normalizeChampionatTeamName(name) {
+  return name.replace(/[«»]/g, "").replace(/\s+/g, " ").trim();
+}
+
+function htmlToText(html) {
+  return String(html || "")
+    .replace(/<script[\s\S]*?<\/script>/gi, "")
+    .replace(/<style[\s\S]*?<\/style>/gi, "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/(?:div|tr|td|th|li|p|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&#039;/g, "'")
+    .replace(/&quot;/g, "\"")
+    .replace(/\n\s+/g, "\n")
+    .replace(/\n{2,}/g, "\n")
+    .trim();
 }

@@ -481,7 +481,7 @@ export function calculateLiveScoreDetailed(record, actual) {
   if (actual.groups && record.groups) {
     GROUPS.forEach((group) => {
       const predicted = record.groups[group.id] || [];
-      const real = actual.groups[group.id] || [];
+      const real = getScorableGroupOrder(actual, group.id);
       const exactPlaces = predicted.filter((teamId, index) => real[index] === teamId).length;
       const points =
         exactPlaces === 4
@@ -525,6 +525,15 @@ function getPredictionThirdPlaces(record) {
   return (record.thirdGroups || [])
     .map((groupId) => ({ groupId, teamId: record.groups?.[groupId]?.[2] }))
     .filter((item) => item.teamId);
+}
+
+function getScorableGroupOrder(actual, groupId) {
+  const tableRows = actual.groupTables?.[groupId];
+  if (Array.isArray(tableRows)) {
+    if (!isGroupTableStarted(tableRows)) return [];
+    return tableRows.map((row) => row.teamId).filter(Boolean);
+  }
+  return actual.groups?.[groupId] || [];
 }
 
 function getThirdPlaceTeamIds(actual) {
@@ -682,7 +691,10 @@ function apiTableRowToActualRow(groupId, row) {
 }
 
 function isGroupTableStarted(rows) {
-  return Array.isArray(rows) && rows.some((row) => Number(row.mp) > 0);
+  if (!Array.isArray(rows)) return false;
+  const playedRows = rows.filter((row) => Number(row.mp) > 0).length;
+  const totalPlayedRows = rows.reduce((sum, row) => sum + (Number(row.mp) || 0), 0);
+  return playedRows >= 2 && totalPlayedRows > 0 && totalPlayedRows % 2 === 0;
 }
 
 function isGroupTableComplete(rows) {

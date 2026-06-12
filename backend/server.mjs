@@ -453,13 +453,19 @@ function shouldRefreshActualResults(actualResults) {
 
 function hasStartedGroupResults(actualResults) {
   return Object.values(actualResults?.groupTables || {}).some((rows) =>
-    Array.isArray(rows) &&
-      rows.some((row) => Number(row.mp) > 0 || Number(row.pts) > 0 || Number(row.gf) > 0 || Number(row.ga) > 0),
+    isScorableGroupTable(rows),
   );
 }
 
 function hasDisplayableGroupTables(actualResults) {
   return Object.values(actualResults?.groupTables || {}).some((rows) => Array.isArray(rows) && rows.length > 0);
+}
+
+function isScorableGroupTable(rows) {
+  if (!Array.isArray(rows)) return false;
+  const playedRows = rows.filter((row) => Number(row.mp) > 0).length;
+  const totalPlayedRows = rows.reduce((sum, row) => sum + (Number(row.mp) || 0), 0);
+  return playedRows >= 2 && totalPlayedRows > 0 && totalPlayedRows % 2 === 0;
 }
 
 function buildLeaderboard(db) {

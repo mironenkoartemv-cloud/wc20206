@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import {
   GROUPS,
+  calculateLiveScoreDetailed,
   getBracketRoundsFromPrediction,
   getChampionFromPrediction,
 } from "../src/tournament.mjs";
@@ -237,6 +238,40 @@ await test("third-place scoring compares teamId, not only groupId", async () => 
   assert.equal(alphaRow.thirdPlacePoints, 0);
   assert.equal(alphaRow.playoffPoints, 67);
   assert.equal(alphaRow.totalPoints, 103);
+});
+
+await test("group scoring ignores impossible partial table rows", async () => {
+  const actual = {
+    groups: {
+      A: perfectPrediction.groups.A,
+      G: perfectPrediction.groups.G,
+    },
+    groupTables: {
+      A: perfectPrediction.groups.A.map((teamId) => ({
+        groupId: "A",
+        teamId,
+        mp: 1,
+        pts: 0,
+        gf: 0,
+        ga: 0,
+      })),
+      G: perfectPrediction.groups.G.map((teamId, index) => ({
+        groupId: "G",
+        teamId,
+        mp: index === 0 ? 1 : 0,
+        pts: 0,
+        gf: 0,
+        ga: 0,
+      })),
+    },
+    thirdGroups: [],
+    thirdPlaces: [],
+    picks: {},
+  };
+  const score = calculateLiveScoreDetailed(perfectPrediction, actual);
+  assert.equal(score.groupRows.find((row) => row.groupId === "A").points, 3);
+  assert.equal(score.groupRows.find((row) => row.groupId === "G").points, 0);
+  assert.equal(score.groups, 3);
 });
 
 await test("perfect mock result gives 119 points and sorts leaderboard", async () => {

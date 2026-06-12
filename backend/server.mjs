@@ -400,6 +400,7 @@ async function routeApi(request, response, url) {
 
 async function refreshActualResults() {
   let primaryResults = null;
+  let fallbackResults = null;
   try {
     const [groupsResponse, gamesResponse] = await Promise.all([
       fetch(`${WORLD_CUP_API_BASE}/get/groups`),
@@ -408,7 +409,6 @@ async function refreshActualResults() {
     if (!groupsResponse.ok) throw new Error(`Groups source failed: ${groupsResponse.status}`);
     if (!gamesResponse.ok) throw new Error(`Games source failed: ${gamesResponse.status}`);
     primaryResults = normalizeWorldCupApiResults(await groupsResponse.json(), await gamesResponse.json());
-    if (hasStartedGroupResults(primaryResults)) return primaryResults;
   } catch (error) {
     console.warn("Primary results source failed, trying Championat fallback.", error);
   }
@@ -421,14 +421,74 @@ async function refreshActualResults() {
       },
     });
     if (!championatResponse.ok) throw new Error(`Championat source failed: ${championatResponse.status}`);
-    const fallbackResults = normalizeChampionatResults(await championatResponse.text());
-    if (hasDisplayableGroupTables(fallbackResults)) return fallbackResults;
+    fallbackResults = normalizeChampionatResults(await championatResponse.text());
   } catch (error) {
     console.warn("Fallback results source failed.", error);
   }
 
+  const reconciledResults = reconcileActualResults(primaryResults, fallbackResults);
+  if (reconciledResults) return reconciledResults;
   if (hasDisplayableGroupTables(primaryResults)) return primaryResults;
+  if (hasDisplayableGroupTables(fallbackResults)) return fallbackResults;
   throw new Error("No results source returned group tables.");
+}
+
+function reconcileActualResults(primaryResults, fallbackResults) {
+  if (!hasDisplayableGroupTables(primaryResults)) return hasDisplayableGroupTables(fallbackResults) ? fallbackResults : null;
+  if (!hasDisplayableGroupTables(fallbackResults)) return primaryResults;
+
+  const conflictGroups = getConflictingGroupTables(primaryResults, fallbackResults);
+  if (conflictGroups.length) {
+    throw new Error(`Results sources disagree for groups: ${conflictGroups.join(", ")}`);
+  }
+
+  const invalidGroups = primaryResults.validation?.invalidGroups || [];
+  if (!invalidGroups.length) return primaryResults;
+
+  const groupTables = { ...primaryResults.groupTables };
+  invalidGroups.forEach((groupId) => {
+    if (fallbackResults.groupTables?.[groupId]) groupTables[groupId] = fallbackResults.groupTables[groupId];
+  });
+
+  return rebuildActualResultsFromGroupTables(
+    {
+      ...primaryResults,
+      source: `${primaryResults.source}+${fallbackResults.source}`,
+      validation: {
+        ...primaryResults.validation,
+        repairedGroups: invalidGroups.filter((groupId) => Boolean(fallbackResults.groupTables?.[groupId])),
+      },
+    },
+    groupTables,
+  );
+}
+
+function rebuildActualResultsFromGroupTables(actualResults, groupTables) {
+  const groups = Object.fromEntries(
+    Object.entries(groupTables)
+      .filter(([, rows]) => isScorableGroupTable(rows))
+      .map(([groupId, rows]) => [groupId, rows.map((row) => row.teamId).filter(Boolean)]),
+  );
+  return {
+    ...actualResults,
+    groups,
+    groupTables,
+  };
+}
+
+function getConflictingGroupTables(primaryResults, fallbackResults) {
+  return Object.keys(primaryResults.groupTables || {}).filter((groupId) => {
+    const primaryRows = primaryResults.groupTables?.[groupId] || [];
+    const fallbackRows = fallbackResults.groupTables?.[groupId] || [];
+    if (!isScorableGroupTable(primaryRows) || !isScorableGroupTable(fallbackRows)) return false;
+    return getComparableGroupRows(primaryRows) !== getComparableGroupRows(fallbackRows);
+  });
+}
+
+function getComparableGroupRows(rows) {
+  return rows
+    .map((row) => [row.teamId, Number(row.mp) || 0, Number(row.pts) || 0, Number(row.gf) || 0, Number(row.ga) || 0])
+    .join("|");
 }
 
 async function ensureFreshActualResults(db) {

@@ -578,7 +578,8 @@ export function toFrontendPrediction(prediction, player) {
 }
 
 export function normalizeWorldCupApiResults(groupsPayload, gamesPayload) {
-  const groupTables = normalizeApiGroupTables(groupsPayload.groups || []);
+  const finishedGroupMatches = countFinishedApiGroupMatches(gamesPayload.games || []);
+  const { groupTables, invalidGroups } = normalizeApiGroupTables(groupsPayload.groups || [], finishedGroupMatches);
   const groups = getStartedGroupsFromTables(groupTables);
   const thirdGroups = normalizeThirdGroupsFromTables(groupTables);
   const thirdPlaces = thirdGroups
@@ -594,6 +595,10 @@ export function normalizeWorldCupApiResults(groupsPayload, gamesPayload) {
     thirdGroups,
     thirdPlaces,
     picks,
+    validation: {
+      invalidGroups,
+      finishedGroupMatches,
+    },
     raw: {
       groupsPayload,
       gamesPayload,
@@ -621,18 +626,25 @@ export function normalizeChampionatResults(html) {
   };
 }
 
-function normalizeApiGroupTables(apiGroups) {
-  return Object.fromEntries(
+function normalizeApiGroupTables(apiGroups, finishedGroupMatches = {}) {
+  const invalidGroups = [];
+  const groupTables = Object.fromEntries(
     apiGroups
       .filter((group) => /^[A-L]$/.test(group.name))
-      .map((group) => [
-        group.name,
-        [...group.teams]
+      .map((group) => {
+        const rows = [...group.teams]
           .sort(compareApiTableRows)
           .map((row) => apiTableRowToActualRow(group.name, row))
-          .filter((row) => row.teamId),
-      ]),
+          .filter((row) => row.teamId);
+        const expectedFinishedMatches = finishedGroupMatches[group.name] || 0;
+        if (!isGroupTableConsistentWithSchedule(rows, expectedFinishedMatches)) {
+          invalidGroups.push(group.name);
+          return [group.name, resetGroupTableRows(rows)];
+        }
+        return [group.name, rows];
+      }),
   );
+  return { groupTables, invalidGroups };
 }
 
 function normalizeThirdGroupsFromTables(groupTables) {
@@ -662,6 +674,15 @@ function normalizeApiKnockoutPicks(apiGames) {
       .map((game) => [apiMatchIdToPickId(Number(game.id)), getApiGameWinnerLocalId(game)])
       .filter(([, winnerId]) => Boolean(winnerId)),
   );
+}
+
+function countFinishedApiGroupMatches(apiGames) {
+  return apiGames
+    .filter((game) => game.type === "group" && /^[A-L]$/.test(game.group) && isApiGameFinished(game))
+    .reduce((acc, game) => {
+      acc[game.group] = (acc[game.group] || 0) + 1;
+      return acc;
+    }, {});
 }
 
 function compareApiTableRows(a, b) {
@@ -695,6 +716,28 @@ function isGroupTableStarted(rows) {
   const playedRows = rows.filter((row) => Number(row.mp) > 0).length;
   const totalPlayedRows = rows.reduce((sum, row) => sum + (Number(row.mp) || 0), 0);
   return playedRows >= 2 && totalPlayedRows > 0 && totalPlayedRows % 2 === 0;
+}
+
+function isGroupTableConsistentWithSchedule(rows, expectedFinishedMatches) {
+  if (!Array.isArray(rows)) return false;
+  const expectedTeamAppearances = Number(expectedFinishedMatches || 0) * 2;
+  const totalPlayedRows = rows.reduce((sum, row) => sum + (Number(row.mp) || 0), 0);
+  if (totalPlayedRows !== expectedTeamAppearances) return false;
+  return rows.every((row) => Number(row.mp) <= Number(expectedFinishedMatches || 0));
+}
+
+function resetGroupTableRows(rows) {
+  return rows.map((row) => ({
+    ...row,
+    mp: 0,
+    w: 0,
+    d: 0,
+    l: 0,
+    gf: 0,
+    ga: 0,
+    gd: 0,
+    pts: 0,
+  }));
 }
 
 function isGroupTableComplete(rows) {

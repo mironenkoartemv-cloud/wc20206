@@ -4,6 +4,7 @@ import {
   calculateLiveScoreDetailed,
   getBracketRoundsFromPrediction,
   getChampionFromPrediction,
+  normalizeWorldCupApiResults,
 } from "../src/tournament.mjs";
 
 const API_BASE = process.env.API_BASE || "http://localhost:8788";
@@ -274,6 +275,44 @@ await test("group scoring ignores impossible partial table rows", async () => {
   assert.equal(score.groups, 3);
 });
 
+await test("worldcup source validates group tables against finished games", async () => {
+  const actual = normalizeWorldCupApiResults(
+    {
+      groups: [
+        {
+          name: "A",
+          teams: [
+            apiGroupRow(1, { mp: 1, w: 1, pts: 3, gf: 2, ga: 0, gd: 2 }),
+            apiGroupRow(2, { mp: 1, l: 1, pts: 0, gf: 0, ga: 2, gd: -2 }),
+            apiGroupRow(3, { mp: 1, w: 1, pts: 3, gf: 2, ga: 1, gd: 1 }),
+            apiGroupRow(4, { mp: 1, l: 1, pts: 0, gf: 1, ga: 2, gd: -1 }),
+          ],
+        },
+        {
+          name: "G",
+          teams: [
+            apiGroupRow(25, { mp: 1 }),
+            apiGroupRow(26),
+            apiGroupRow(27),
+            apiGroupRow(28),
+          ],
+        },
+      ],
+    },
+    {
+      games: [
+        apiGame(1, "A", 1, 2, 2, 0, true),
+        apiGame(2, "A", 3, 4, 2, 1, true),
+        apiGame(15, "G", 25, 26, 0, 0, false),
+      ],
+    },
+  );
+  assert.deepEqual(actual.groups.A, ["mexico", "south-korea", "czechia", "south-africa"]);
+  assert.equal(actual.groups.G, undefined);
+  assert.ok(actual.validation.invalidGroups.includes("G"));
+  assert.ok(actual.groupTables.G.every((row) => row.mp === 0));
+});
+
 await test("perfect mock result gives 119 points and sorts leaderboard", async () => {
   await request("/api/admin/results/mock", {
     method: "POST",
@@ -361,6 +400,34 @@ function createPrediction(mode) {
     })),
     picks: record.picks,
     championTeamId: champion.id,
+  };
+}
+
+function apiGroupRow(teamId, overrides = {}) {
+  return {
+    team_id: String(teamId),
+    mp: "0",
+    w: "0",
+    l: "0",
+    d: "0",
+    pts: "0",
+    gf: "0",
+    ga: "0",
+    gd: "0",
+    ...Object.fromEntries(Object.entries(overrides).map(([key, value]) => [key, String(value)])),
+  };
+}
+
+function apiGame(id, group, homeTeamId, awayTeamId, homeScore, awayScore, finished) {
+  return {
+    id: String(id),
+    group,
+    type: "group",
+    home_team_id: String(homeTeamId),
+    away_team_id: String(awayTeamId),
+    home_score: String(homeScore),
+    away_score: String(awayScore),
+    finished: finished ? "TRUE" : "FALSE",
   };
 }
 

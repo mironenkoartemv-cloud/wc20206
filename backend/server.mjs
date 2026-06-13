@@ -438,12 +438,16 @@ function reconcileActualResults(primaryResults, fallbackResults) {
   if (!hasDisplayableGroupTables(fallbackResults)) return primaryResults;
 
   const conflictGroups = getConflictingGroupTables(primaryResults, fallbackResults);
-  if (conflictGroups.length) {
-    throw new Error(`Results sources disagree for groups: ${conflictGroups.join(", ")}`);
-  }
-
   const invalidGroups = primaryResults.validation?.invalidGroups || [];
-  if (!invalidGroups.length) return primaryResults;
+  if (!invalidGroups.length) {
+    return {
+      ...primaryResults,
+      validation: {
+        ...primaryResults.validation,
+        conflictGroups,
+      },
+    };
+  }
 
   const groupTables = { ...primaryResults.groupTables };
   invalidGroups.forEach((groupId) => {
@@ -456,6 +460,7 @@ function reconcileActualResults(primaryResults, fallbackResults) {
       source: `${primaryResults.source}+${fallbackResults.source}`,
       validation: {
         ...primaryResults.validation,
+        conflictGroups,
         repairedGroups: invalidGroups.filter((groupId) => Boolean(fallbackResults.groupTables?.[groupId])),
       },
     },

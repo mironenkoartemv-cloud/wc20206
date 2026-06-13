@@ -1280,7 +1280,7 @@ function renderWorldCupResults() {
   meta.textContent = `Источник: ${actual?.source || "не подключен"} · обновлено ${actual?.updatedAt ? formatDate(actual.updatedAt) : "ожидается"}`;
   nodes.worldResults.appendChild(meta);
 
-  const groupsWithTables = GROUPS.filter((group) => Array.isArray(groupTables[group.id]) && groupTables[group.id].length);
+  const groupsWithTables = GROUPS.filter((group) => isStartedResultTable(groupTables[group.id]));
   if (!groupsWithTables.length) {
     const empty = document.createElement("div");
     empty.className = "live-empty";
@@ -1322,6 +1322,13 @@ function renderWorldCupResults() {
   });
 
   nodes.worldResults.appendChild(grid);
+}
+
+function isStartedResultTable(rows) {
+  if (!Array.isArray(rows)) return false;
+  const playedRows = rows.filter((row) => Number(row.mp) > 0).length;
+  const totalPlayedRows = rows.reduce((sum, row) => sum + (Number(row.mp) || 0), 0);
+  return playedRows >= 2 && totalPlayedRows > 0 && totalPlayedRows % 2 === 0;
 }
 
 function renderSavedPrediction(record = getSavedCurrentPrediction()) {

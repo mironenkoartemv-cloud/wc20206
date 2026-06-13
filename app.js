@@ -12,6 +12,7 @@ const STORAGE_ACTUAL_RESULTS = "wc2026-actual-results";
 const STORAGE_PLAYER_TOKEN = "wc2026-player-token";
 const LIVE_REFRESH_INTERVAL_MS = 1000 * 60 * 5;
 const NAME_CHECK_DEBOUNCE_MS = 300;
+const API_REQUEST_TIMEOUT_MS = 8000;
 const API_BASE =
   typeof window !== "undefined" && ["3000", "5173", "5174"].includes(window.location?.port)
     ? "http://localhost:8787"
@@ -393,6 +394,8 @@ function removeStorage(key) {
 
 async function apiRequest(path, options = {}) {
   if (typeof fetch !== "function") throw new Error("Fetch is unavailable");
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => controller.abort(), API_REQUEST_TIMEOUT_MS);
   const headers = {
     "content-type": "application/json",
     ...(options.headers || {}),
@@ -400,18 +403,26 @@ async function apiRequest(path, options = {}) {
   const token = readStorage(STORAGE_PLAYER_TOKEN);
   if (token && !headers.authorization) headers.authorization = `Bearer ${token}`;
 
-  const response = await fetch(`${API_BASE}${path}`, {
-    ...options,
-    headers,
-  });
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const error = new Error(payload.message || `HTTP ${response.status}`);
-    error.status = response.status;
-    error.payload = payload;
+  try {
+    const response = await fetch(`${API_BASE}${path}`, {
+      ...options,
+      headers,
+      signal: controller.signal,
+    });
+    const payload = await response.json().catch(() => ({}));
+    if (!response.ok) {
+      const error = new Error(payload.message || `HTTP ${response.status}`);
+      error.status = response.status;
+      error.payload = payload;
+      throw error;
+    }
+    return payload;
+  } catch (error) {
+    if (error.name === "AbortError") throw new Error("Сервер не ответил за 8 секунд.");
     throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
-  return payload;
 }
 
 function checkPlayerNameAvailability(displayName) {

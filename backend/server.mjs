@@ -24,6 +24,7 @@ const CHAMPIONAT_TABLE_URL =
 const ADMIN_TOKEN = process.env.ADMIN_TOKEN || "";
 const PREDICTION_CLOSES_AT = process.env.PREDICTION_CLOSES_AT || "2026-06-11T19:00:00.000Z";
 const RESULTS_REFRESH_INTERVAL_MS = Number(process.env.RESULTS_REFRESH_INTERVAL_MS || 60 * 60 * 1000);
+const PROVIDER_FETCH_TIMEOUT_MS = Number(process.env.PROVIDER_FETCH_TIMEOUT_MS || 8000);
 const TOKEN_BYTES = 32;
 
 const server = http.createServer(async (request, response) => {
@@ -403,8 +404,8 @@ async function refreshActualResults() {
   let fallbackResults = null;
   try {
     const [groupsResponse, gamesResponse] = await Promise.all([
-      fetch(`${WORLD_CUP_API_BASE}/get/groups`),
-      fetch(`${WORLD_CUP_API_BASE}/get/games`),
+      fetchWithTimeout(`${WORLD_CUP_API_BASE}/get/groups`),
+      fetchWithTimeout(`${WORLD_CUP_API_BASE}/get/games`),
     ]);
     if (!groupsResponse.ok) throw new Error(`Groups source failed: ${groupsResponse.status}`);
     if (!gamesResponse.ok) throw new Error(`Games source failed: ${gamesResponse.status}`);
@@ -414,7 +415,7 @@ async function refreshActualResults() {
   }
 
   try {
-    const championatResponse = await fetch(CHAMPIONAT_TABLE_URL, {
+    const championatResponse = await fetchWithTimeout(CHAMPIONAT_TABLE_URL, {
       headers: {
         "user-agent": "Mozilla/5.0 ChexxWc2026Bot/1.0",
         accept: "text/html,application/xhtml+xml",
@@ -431,6 +432,13 @@ async function refreshActualResults() {
   if (hasDisplayableGroupTables(primaryResults)) return primaryResults;
   if (hasDisplayableGroupTables(fallbackResults)) return fallbackResults;
   throw new Error("No results source returned group tables.");
+}
+
+function fetchWithTimeout(url, options = {}) {
+  return fetch(url, {
+    ...options,
+    signal: AbortSignal.timeout(PROVIDER_FETCH_TIMEOUT_MS),
+  });
 }
 
 function reconcileActualResults(primaryResults, fallbackResults) {
